@@ -161,12 +161,21 @@ class ClientSocket{
 			//Gabriel*
 		}
 
-		void downloadFile(){
-			//TODO
+		void downloadFile(){ //TODO
+			//envia requisição de download para o server
+			this->sendMessage("download");
+
+			//aqui deve ter uma espera para o arquivo lido do servidor
+
+			//envia o nome do arquivo para o servidor
+			this->sendMessage("filename");
 		}
 
-		void deleteFile(){
-			//TODO
+		void deleteFile(){ //TODO
+			//envia requisição de delete para o servidor
+			this->sendMessage("delete");
+			//envia o nome do arquivo para ser deletado pelo servidor
+			this->sendMessage(filename);
 		}
 
 		// //Função para tratamento de comandos de interface do cliente
