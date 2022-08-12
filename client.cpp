@@ -130,11 +130,18 @@ class ClientSocket{
 			FILE *file;
 			int fileSize;
 			int bytes;
+			//string filename;
+			//char ch = '/';
+			
 			if((file = fopen(filepath.c_str(),"rb"))){
+				//envia requisição de envio para o servidor
 				fileSize = getFileSize(filepath);
 				this->sendMessage("upload");
-
-				//TODO nome do arquivo
+				
+				//envia o nome do arquivo para o servidor
+				//filename = filepath.substr(filepath.find_last_of(ch) + 1 ,filepath.length()- filepath.find(ch));
+				//this->sendMessage(filename);
+				
 				this->sendMessage(filepath);
 				//waitConfirm();
 				this->sendMessage(to_string(fileSize));
