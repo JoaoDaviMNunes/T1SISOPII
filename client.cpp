@@ -113,15 +113,32 @@ class ClientSocket{
 				fclose(file);
 			}
 		}
-			void sendFile(string filename){
+		void sendFile(string filepath){
 			fstream file;
-			file.open(filename);
+			file.open(filepath);
+
+			this->sendMessage("upload");
+
+			//TODO nome do arquivo
+			this->sendMessage(filename);
 
 			std::string fileContent((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());	
 
 			int bytes = send(sockfd, fileContent.c_str(), fileContent.length(),0);
 			cout << "Bytes enviados: " << bytes << endl;
 		}
+		void receiveFile(){
+			//Gabriel*
+		}
+
+		void downloadFile(){
+			//TODO
+		}
+
+		void deleteFile(){
+			//TODO
+		}
+
 		void closeSocket(){
 			close(this->sockfd);
 		}
@@ -170,22 +187,20 @@ class ClientSocket{
 					/*Envia o arquivo filename.ext para o servidor, colocando-o no “sync_dir” do
 					servidor e propagando-o para todos os dispositivos daquele usuário.
 					e.g. upload /home/user/MyFolder/filename.ext*/
-					this->cli.sendMessage(request);
-					this->cli.sendFile();
+					this->sendFile(filepath);
 					cout << "subir arquivo: " + file + "\n";
 				}
 				else if(aux == "download"){
 					/*Faz uma cópia não sincronizada do arquivo filename.ext do servidor para
 					o diretório local (de onde o servidor foi chamado). e.g. download
 					mySpreadsheet.xlsx*/
-					this->cli.sendMessage(aux);
+					this->sendMessage(aux);
 					cout << "baixar arquivo" + file + "\n";
 				}
 				else if(aux == "delete"){
 					//Exclui o arquivo <filename.ext> de “sync_dir”
-					this->cli.sendMessage(request);
+					//deleteFile();
 					cout << "deletar arquivo" + file + "\n";
-					aux = "";
 				}
 				else{
 					cout << "ERRO, comando inválido\nPor favor, digite novamente: \n";
@@ -203,7 +218,7 @@ class ClientSocket{
 
 			}	
 		}
-		void sync_thread(){
+		void *sync_thread(){
 			download_all_files();
 		}
 };
