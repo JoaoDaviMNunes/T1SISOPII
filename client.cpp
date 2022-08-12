@@ -45,6 +45,10 @@ class ClientSocket{
 			if(bytes < 0){
 				cout << "error connecting" << endl;
 			}
+			bytes = send(this->sockfd, this->userId.c_str(), this->userId.length(),0);
+			if(bytes < 0){
+				cout << "error connecting" << endl;
+			}
 /*
 			int devicesConnected = 0;
 			bytes = read(this->sockfd, &devicesConnected, sizeof(int));
@@ -62,12 +66,7 @@ class ClientSocket{
 			int bytes = send(this->sockfd , message.c_str() , message.length() , 0 );
 			cout << "Bytes enviados: " << bytes << endl;
 		}
-		void sendFile(fstream &file){
-			std::string fileContent((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());	
-
-			int bytes = send(sockfd, fileContent.c_str(), fileContent.length(),0);
-			cout << "Bytes enviados: " << bytes << endl;
-		}
+		
 		void sync_dir_onConnect(){
 			string dirName = "sync_dir_";
 
@@ -113,6 +112,85 @@ class ClientSocket{
 				}
 				fclose(file);
 			}
+		}
+			void sendFile(string filename){
+			fstream file;
+			file.open(filename);
+
+			std::string fileContent((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());	
+
+			int bytes = send(sockfd, fileContent.c_str(), fileContent.length(),0);
+			cout << "Bytes enviados: " << bytes << endl;
+		}
+		void closeSocket(){
+			close(this->sockfd);
+		}
+
+		//Função para tratamento de comandos de interface do cliente
+		void interface(ClientSocket cli){
+
+			std::string request, command, file;
+
+			cout << "\nComandos:\nupload <path/filename.ext>\ndownload <filename.ext>\ndelete <filename.ext>\nlist_server\nlist_client\nget_sync_dir\nexit\n";
+			
+			do
+			{
+				cout << "Digite o comando: \n";
+				getline(std::cin, request);
+
+				if (request.find(" ") != -1){
+					command = request.substr(0,request.find(" "));
+					filepath = request.substr(request.find(" "), request.length()- request.find(" "));
+				}
+				if(request == "exit"){
+					//Fecha a sessão com o servidor.
+					cout << "encerrar conexão\n";
+					this->cli.sendMessage(request);
+					this->cli.closeSocket();
+					break;
+				}
+				else if(request == "list_server"){
+					//Lista os arquivos salvos no servidor associados ao usuário.
+					this->cli.sendMessage(request);
+					// read socket
+					cout << "listar arquivos do servidor\n";
+				}
+				else if(request == "list_client"){
+					//Lista os arquivos salvos no diretório “sync_dir”				
+					cout << "listar arquivos do cliente: \n";
+
+				}
+				else if(request == "get_sync_dir"){
+					//Cria o diretório “sync_dir” e inicia as atividades de sincronização
+					//getSyncDir();
+					this->cli.sendFile(request);
+					cout << "sincronizar diretórios\n";
+				}		
+				else if(aux == "upload"){
+					/*Envia o arquivo filename.ext para o servidor, colocando-o no “sync_dir” do
+					servidor e propagando-o para todos os dispositivos daquele usuário.
+					e.g. upload /home/user/MyFolder/filename.ext*/
+					this->cli.sendMessage(request);
+					this->cli.sendFile();
+					cout << "subir arquivo: " + file + "\n";
+				}
+				else if(aux == "download"){
+					/*Faz uma cópia não sincronizada do arquivo filename.ext do servidor para
+					o diretório local (de onde o servidor foi chamado). e.g. download
+					mySpreadsheet.xlsx*/
+					this->cli.sendMessage(aux);
+					cout << "baixar arquivo" + file + "\n";
+				}
+				else if(aux == "delete"){
+					//Exclui o arquivo <filename.ext> de “sync_dir”
+					this->cli.sendMessage(request);
+					cout << "deletar arquivo" + file + "\n";
+					aux = "";
+				}
+				else{
+					cout << "ERRO, comando inválido\nPor favor, digite novamente: \n";
+				}
+			}while(request != "exit");
 		}
 		void sync_client(){
 			cout << "here" << endl;
