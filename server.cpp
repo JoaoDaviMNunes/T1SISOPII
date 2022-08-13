@@ -121,6 +121,54 @@ void *startClientThread(void *socket)
 	initClient(userId, socketAdress);
 	listenClient(userId, socketAdress);
 }
+void listenSync(int userId, int *clientSocket){
+	int bytes;
+	char buffer[256];
+
+	bytes = read(*clientSocket, buffer, 256);
+	cout << buffer << endl;
+	if(bytes < 0)
+		cout << "erro ao ler requisicao do cliente" << endl;
+
+	while(strcmp(buffer,"exit") != 0){
+		if(strcmp(buffer,"upload") == 0){
+			char fileName[256];
+			char fileSize[256];
+			int ifileSize;
+			bytes = read(*clientSocket, buffer, 256);
+			strcpy(fileName, buffer);
+			//send(*clientSocket,confirm,sizeof(confirm),0);
+			bytes = read(*clientSocket, buffer,256);
+			strcpy(fileSize, buffer);
+			ifileSize = atoi(fileSize);
+			receiveFile(userId,fileName,ifileSize,clientSocket);
+		}
+		bytes = read(*clientSocket,buffer,256);
+	}
+}
+void *startSyncThread(void *socket){
+	int *socketAdress = (int *)socket;
+	int bytes;
+	int userId;
+
+	// Le userId
+	userId = read(clientSockfd, buffer, 256);
+	if (userId < 0)
+		cout << "Erro ao ler do socket" << endl;
+
+	char isConnected = 'Y';
+	// Informa ao usuário que conseguiu conectar ao server
+
+	bytes = send(*socketAdress, &isConnected, sizeof(char),0);
+	if (bytes < 1)
+	{
+		cout << "Erro ao informar usuario" << endl;
+	}
+
+	listenSync(userId, socketAdress);
+}
+
+
 
 int main(int argc, char *argv[])
 {
@@ -129,7 +177,7 @@ int main(int argc, char *argv[])
 	listen(sockfd, 5);
 
 	clilen = sizeof(struct sockaddr_in);
-	pthread_t clientThread;
+	pthread_t clientThread, syncThread;
 	cout << "Server incializado..." << endl;
 	while (true)
 	{
@@ -141,18 +189,24 @@ int main(int argc, char *argv[])
 		{
 			bzero(buffer, 256);
 
-			int userIdRead;
+			int typeOfService;
 			/* read from the socket */
-			userIdRead = read(clientSockfd, buffer, 256);
-			if (userIdRead < 0)
+			typeOfService = read(clientSockfd, buffer, 256);
+			if (typeOfService < 0)
 				cout << "Erro ao ler do socket" << endl;
 
-			if (userIdRead > 0)
+			if (typeOfService == 1) //Atende request do cliente
 			{
 				if (pthread_create(&clientThread, NULL, startClientThread, &clientSockfd))
 				{
 					cout << "Erro ao abrir a thread do cliente" << endl;
 				}
+			}else if(typeOfService == 2){ //Sincronização com cliente
+				if (pthread_create(&syncThread, NULL, startSyncThread, &clientSockfd))
+				{
+					cout << "Erro ao abrir a thread do cliente" << endl;
+				}
+
 			}
 		}
 	}

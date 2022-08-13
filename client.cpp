@@ -11,22 +11,25 @@
 #include <string>
 #include <fstream>
 #include <errno.h>
-#include <sys/inotify.h>
+//#include <sys/inotify.h>
 
 //variáveis inotify
 #define EVENT_SIZE ( sizeof (struct inotify_event) )
 #define EVENT_BUF_LEN ( 1024 * ( EVENT_SIZE + 16 ) )
 int fd;
 int wd;
-string directory;
 
 
+#define SYNCSERVICE 2
+#define REQUESTSERVICE 1
 #define PORT 4000
 
 using namespace std;
+
+string directory;
 class ClientSocket{
 	private:
-		int sockfd;
+		int sockfd,sync_sock;
 		struct sockaddr_in serv_addr;
 		struct hostent *server;
 		string userId;
@@ -88,17 +91,17 @@ class ClientSocket{
 		}
 		void download_all_files(){
 			string command = "DOWNLOADALLFILES";
-			int bytes = send(this->sockfd, command.c_str(), command.length(),0);
+			int bytes = send(this->sync_sock, command.c_str(), command.length(),0);
 			if(bytes < 0){
 				cout << "error while downloading all files" << endl;
 				return;
 			}
 			int qtFiles;
-			bytes = read(this->sockfd, &qtFiles, sizeof(qtFiles));
+			bytes = read(this->sync_sock, &qtFiles, sizeof(qtFiles));
 			string fileName;
 			for(int i=0;i<qtFiles;i++){
 				//Le nome do arquivo
-				bytes = read(this->sockfd,&fileName,sizeof(fileName));
+				bytes = read(this->sync_sock,&fileName,sizeof(fileName));
 
 				if(bytes < 0){
 					cout << "error downloading files" << endl;
@@ -109,13 +112,13 @@ class ClientSocket{
 				file = fopen(dirFile.c_str(),"wb");
 				
 				int fileSize;
-				bytes = read(this->sockfd, &fileSize, sizeof(fileSize));
+				bytes = read(this->sync_sock, &fileSize, sizeof(fileSize));
 
 				char buffer[10000];
 				if(fileSize > 0){
 					
 					while(fileSize > 0){
-						bytes = read(this->sockfd,buffer,10000);
+						bytes = read(this->sync_sock,buffer,10000);
 						fwrite(buffer,min(fileSize,10000),1,file);
 
 						fileSize -= 10000;
@@ -184,7 +187,7 @@ class ClientSocket{
 			//envia requisição de delete para o servidor
 			this->sendMessage("delete");
 			//envia o nome do arquivo para ser deletado pelo servidor
-			this->sendMessage(filename);
+			//this->sendMessage(filename);
 		}
 
 		// //Função para tratamento de comandos de interface do cliente
@@ -251,7 +254,33 @@ class ClientSocket{
 		// 		}
 		// 	}while(request != "exit");
 		// }
-		
+		int sync_socket(){
+			int service = SYNCSERVICE;
+			int bytes;
+			if(this->server == NULL){
+				cout << "erro ao criar sync socket" << endl;
+				return -1;
+			}
+			if((sync_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1){
+				cout << "erro ao criar sync socket" << endl;
+				return -1;
+			}
+
+			this->serv_addr.sin_family = AF_INET;     
+			this->serv_addr.sin_port = htons(PORT);    
+			this->serv_addr.sin_addr = *((struct in_addr *)this->server->h_addr);
+
+			bzero(&(this->serv_addr.sin_zero), 8);     
+
+			if (connect(this->sync_sock,(struct sockaddr *) &this->serv_addr,sizeof(this->serv_addr)) < 0){ 
+				cout << "erro ao conectar sync_sock" << endl;
+				return -1;
+			}
+
+			bytes = send(this->sync_sock, &service, sizeof(SYNCSERVICE),0);
+
+			bytes = send(this->sync_sock, this->userId.c_str(), sizeof(this->userId),0);
+		}
 		void sync_client(){
 			cout << "here" << endl;
 			string dirName = "sync_dir_" + this->userId;
@@ -265,51 +294,54 @@ class ClientSocket{
 		}
 		void inotifyInit(){
 	
-			fd = inotify_init();
-			wd = inotify_add_watch( fd, sync_dir, IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
+			//fd = inotify_init();
+			//wd = inotify_add_watch( fd, sync_dir, IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
 		}
 
 		void *sync_thread( ){
 
+			sync_socket();
 			download_all_files();
-			int length, i = 0;
-			char buffer[EVENT_BUF_LEN];
-			string path;
+			// int length, i = 0;
+			// char buffer[EVENT_BUF_LEN];
+			// string path;
 
-			while(1){
-			  /*read to determine the event change happens on “/sync_dir” directory. Actually this read blocks until the change event occurs*/
-			  length = read( fd, buffer, EVENT_BUF_LEN ); 
+			// while(1){
+			//   /*read to determine the event change happens on “/sync_dir” directory. Actually this read blocks until the change event occurs*/
+			//   length = read( fd, buffer, EVENT_BUF_LEN ); 
 
-			  /*checking for error*/
-			  if ( length < 0 ) {
-			    perror( "read" );
-			  }
+			//   /*checking for error*/
+			//   if ( length < 0 ) {
+			//     perror( "read" );
+			//   }
 
-			  /*actually read return the list of change events happens. Here, read the change event one by one and process it accordingly.*/
-			  while ( i < length ) {    
-				struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];     
-				if ( event->len ) {
-			      if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
-				strcpy(path, directory);
-				strcat(path, "/");
-				strcat(path, event->name);
-				if(exists(path) && (event->name[0] != '.')){
-						sendFile(path);
-					}
-			      }
-			      else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
-					if(event->name[0] != '.')
-					{
-						deleteFile(event->name);
-					}
-			      }
-			    }
-			    i += EVENT_SIZE + event->len;
-			  }
-				i = 0;
-				sleep(10);
-			}
+			//   /*actually read return the list of change events happens. Here, read the change event one by one and process it accordingly.*/
+			//   while ( i < length ) {    
+			// 	struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];     
+			// 	if ( event->len ) {
+			//       if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
+			// 	strcpy(path, directory);
+			// 	strcat(path, "/");
+			// 	strcat(path, event->name);
+			// 	if(exists(path) && (event->name[0] != '.')){
+			// 			sendFile(path);
+			// 		}
+			//       }
+			//       else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
+			// 		if(event->name[0] != '.')
+			// 		{
+			// 			deleteFile(event->name);
+			// 		}
+			//       }
+			//     }
+			//     i += EVENT_SIZE + event->len;
+			//   }
+			// 	i = 0;
+			// 	sleep(10);
+			// }
 		}
+
+
 };
 
 int main(int argc, char *argv[])
