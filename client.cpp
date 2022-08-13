@@ -20,7 +20,6 @@
 int fd;
 int wd;
 
-
 #define SYNCSERVICE 2
 #define REQUESTSERVICE 1
 #define PORT 4000
@@ -112,6 +111,7 @@ class ClientSocket{
 		}
 		void closeSocket(){
 			close(this->sockfd);
+			close(this->sync_sock);
 		}
 		void download_all_files(){
 			string command = "DOWNLOADALLFILES";
@@ -429,9 +429,9 @@ int main(int argc, char *argv[])
 	
 	// cli.sync_client();
 	//cout << "try to send file" << endl;
-	//cli.sendFile("arquivoCliente.txt");
-	cout << "try to download" << endl;
-	cli.downloadFile("arquivoCliente.txt");
+	cli.sendFile("arquivoCliente.txt");
+	//cout << "try to download" << endl;
+	//cli.downloadFile("arquivoCliente.txt");
 
 	// //Envia um arquivo
 	// fstream file;
