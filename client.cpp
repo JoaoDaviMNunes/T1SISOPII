@@ -12,7 +12,7 @@
 #include <string>
 #include <fstream>
 #include <errno.h>
-//#include <sys/inotify.h>
+#include <sys/inotify.h>
 
 //variáveis inotify
 #define EVENT_SIZE ( sizeof (struct inotify_event) )
@@ -27,8 +27,6 @@ int wd;
 
 using namespace std;
 string dirName;
-
-namespace fs = std::__fs::filesystem;
 
 string directory;
 class ClientSocket{
@@ -55,11 +53,8 @@ class ClientSocket{
 		// Lista os arquivos do diretório do cliente
 		// Tratamento do comando "list client"
 		void listClient()
-		{
-			std::string path = dirName;
-   			for (const auto & entry : fs::directory_iterator(path))
-        			std::cout << entry.path() << std::endl;
-		}
+		{}
+
 		int exists(const char *fname){
 		    //https://stackoverflow.com/questions/230062/whats-the-best-way-to-check-if-a-file-exists-in-c
 		    FILE *file;
@@ -205,7 +200,7 @@ class ClientSocket{
 			this->sendMessage(fileName);
 
 			ofstream file;
-			string dir = fileName;
+			string dir = "sync_dir_" + this->userId + "/" + fileName;
 			file.open(dir);
 			int bytes;
 			char buffer[10000];
@@ -239,70 +234,71 @@ class ClientSocket{
 		}
 
 		// //Função para tratamento de comandos de interface do cliente
-		// void interface(ClientSocket cli){
+		void interface(){
 
-		// 	std::string request, command, file;
+			std::string request, command, file;
 
-		// 	cout << "\nComandos:\nupload <path/filename.ext>\ndownload <filename.ext>\ndelete <filename.ext>\nlist_server\nlist_client\nget_sync_dir\nexit\n";
+			cout << "\nComandos:\nupload <path/filename.ext>\ndownload <filename.ext>\ndelete <filename.ext>\nlist_server\nlist_client\nget_sync_dir\nexit\n";
 			
-		// 	do
-		// 	{
-		// 		cout << "Digite o comando: \n";
-		// 		getline(std::cin, request);
+			do
+			{
+				cout << "Digite o comando: \n";
+				getline(std::cin, request);
 
-		// 		if (request.find(" ") != -1){
-		// 			command = request.substr(0,request.find(" "));
-		// 			filepath = request.substr(request.find(" "), request.length()- request.find(" "));
-		// 		}
-		// 		if(request == "exit"){
-		// 			//Fecha a sessão com o servidor.
-		// 			cout << "encerrar conexão\n";
-		// 			this->cli.sendMessage(request);
-		// 			this->cli.closeSocket();
-		// 			break;
-		// 		}
-		// 		else if(request == "list_server"){
-		// 			//Lista os arquivos salvos no servidor associados ao usuário.
-		// 			this->cli.sendMessage(request);
-		// 			// read socket
-		// 			cout << "listar arquivos do servidor\n";
-		// 		}
-		// 		else if(request == "list_client"){
-		// 			//Lista os arquivos salvos no diretório “sync_dir”				
-		// 			cout << "listar arquivos do cliente: \n";
+				if (request.find(" ") != -1){
+					command = request.substr(0,request.find(" "));
+					file = request.substr(request.find(" ")+1, request.length()- request.find(" "));
+				}
+				if(request == "exit"){
+					//Fecha a sessão com o servidor.
+					cout << "encerrar conexão\n";
+					//this->sendMessage(request);
+					this->closeSocket();
+					break;
+				}
+				else if(request == "list_server"){
+					//Lista os arquivos salvos no servidor associados ao usuário.
+					//this->sendMessage(request);
+					// read socket
+					cout << "listar arquivos do servidor\n";
+				}
+				else if(request == "list_client"){
+					//Lista os arquivos salvos no diretório “sync_dir”				
+					cout << "listar arquivos do cliente: \n";
 
-		// 		}
-		// 		else if(request == "get_sync_dir"){
-		// 			//Cria o diretório “sync_dir” e inicia as atividades de sincronização
-		// 			//getSyncDir();
-		// 			this->cli.sendFile(request);
-		// 			cout << "sincronizar diretórios\n";
-		// 		}		
-		// 		else if(aux == "upload"){
-		// 			/*Envia o arquivo filename.ext para o servidor, colocando-o no “sync_dir” do
-		// 			servidor e propagando-o para todos os dispositivos daquele usuário.
-		// 			e.g. upload /home/user/MyFolder/filename.ext*/
-		// 			this->sendFile(filepath);
-		// 			cout << "subir arquivo: " + file + "\n";
-		// 		}
-		// 		else if(aux == "download"){
-		// 			/*Faz uma cópia não sincronizada do arquivo filename.ext do servidor para
-		// 			o diretório local (de onde o servidor foi chamado). e.g. download
-		// 			mySpreadsheet.xlsx*/
-		// 			this->sendMessage(aux);
-		// 			cout << "baixar arquivo" + file + "\n";
-		//			downloadFile(file);
-		// 		}
-		// 		else if(aux == "delete"){
-		// 			//Exclui o arquivo <filename.ext> de “sync_dir”
-		// 			//deleteFile();
-		// 			cout << "deletar arquivo" + file + "\n";
-		// 		}
-		// 		else{
-		// 			cout << "ERRO, comando inválido\nPor favor, digite novamente: \n";
-		// 		}
-		// 	}while(request != "exit");
-		// }
+				}
+				else if(request == "get_sync_dir"){
+					//Cria o diretório “sync_dir” e inicia as atividades de sincronização
+					//getSyncDir();
+					//this->sendFile(request);
+					cout << "sincronizar diretórios\n";
+				}		
+				else if(command == "upload"){
+					/*Envia o arquivo filename.ext para o servidor, colocando-o no “sync_dir” do
+					servidor e propagando-o para todos os dispositivos daquele usuário.
+					e.g. upload /home/user/MyFolder/filename.ext*/
+					this->sendFile(file);
+					cout << "subir arquivo: " + file + "\n";
+				}
+				else if(command == "download"){
+					/*Faz uma cópia não sincronizada do arquivo filename.ext do servidor para
+					o diretório local (de onde o servidor foi chamado). e.g. download
+					mySpreadsheet.xlsx*/
+					//this->sendMessage(aux);
+					cout << "baixar arquivo" + file + "\n";
+					downloadFile(file);
+				}
+				else if(command == "delete"){
+					//Exclui o arquivo <filename.ext> de “sync_dir”
+					//deleteFile();
+					cout << "deletar arquivo" + file + "\n";
+				}
+				else{
+					cout << "ERRO, comando inválido\nPor favor, digite novamente: \n";
+				}
+			}while(request != "exit");
+		}
+
 		int sync_socket(){
 			int service = SYNCSERVICE;
 			int bytes;
@@ -343,17 +339,16 @@ class ClientSocket{
 				cout << "Erro ao criar diretorio ou diretorio ja existente" << endl;
 			}else{
 				cout << "sync_dir_"+this->userId << " created" << endl;
-
 			}	
 
 			if(pthread_create(&sync_thread_thread, NULL, sync_thread_helper, NULL)){
 				cout << "erro ao criar sync thread" << endl;
-			}
+			}			
 		}
 		void inotifyInit(){
 	
-			//fd = inotify_init();
-			//wd = inotify_add_watch( fd, sync_dir, IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
+			fd = inotify_init();
+			wd = inotify_add_watch( fd, dirName.c_str(), IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
 		}
 
 		static void *sync_thread_helper(void *context){
@@ -364,55 +359,54 @@ class ClientSocket{
 			//https://www.thegeekstuff.com/2010/04/inotify-c-program-example/
 			
 			sync_socket();
-		// 	download_all_files();
-		// 	int length, i = 0;
-		// 	char buffer[EVENT_BUF_LEN];
-		// 	char path[200];
+		 	download_all_files();
+		 	int length, i = 0;
+		 	char buffer[EVENT_BUF_LEN];
+		 	char path[200];
 
 
 
-		// 	while(1){
-		// 	  //cout << "Monitorando" << endl;
-		// 	  /*read to determine the event change happens on “/sync_dir” dirName.c_str(). Actually this read blocks until the change event occurs*/
-		// 	  length = read( fd, buffer, EVENT_BUF_LEN ); 
+		 	while(1){
+		 	  //cout << "Monitorando" << endl;
+		 	  /*read to determine the event change happens on “/sync_dir” dirName.c_str(). Actually this read blocks until the change event occurs*/
+		 	  length = read( fd, buffer, EVENT_BUF_LEN ); 
 
-		// 	  /*checking for error*/
-		// 	  if ( length < 0 ) {
-		// 	    perror( "read" );
-		// 	  }
+		 	  /*checking for error*/
+		 	  if ( length < 0 ) {
+		 	    perror( "read" );
+		 	  }
 
-		// 	  /*actually read return the list of change events happens. Here, read the change event one by one and process it accordingly.*/
-		// 	  while ( i < length ) { 
-		// 		struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];     
-		// 		if ( event->len ) {
-		// 	      if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
-		// 		strcpy(path, dirName.c_str());
-		// 		strcat(path, "/");
-		// 		strcat(path, event->name);
-		// 		if(exists(path) && (event->name[0] != '.')){
-		// 				//sendFile(path);
-		// 				cout << "Send File" << endl;
-		// 			}
-		// 	      }
-		// 	      else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
-		// 			if(event->name[0] != '.')
-		// 			{
-		// 				//deleteFile(event->name);
-		// 				cout << "Delete File" << endl;
-		// 			}
-		// 	      }
-		// 	    }
-		// 	    i += EVENT_SIZE + event->len;
-		// 	  }
-		// 		i = 0;
-		// 		sleep(5);
-		// 	}
+		 	  /*actually read return the list of change events happens. Here, read the change event one by one and process it accordingly.*/
+		 	  while ( i < length ) { 
+		 		struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];     
+		 		if ( event->len ) {
+		 	      if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
+		 		strcpy(path, dirName.c_str());
+		 		strcat(path, "/");
+		 		strcat(path, event->name);
+		 		if(exists(path) && (event->name[0] != '.')){
+		 				sendFile(path);
+		 				cout << "Send File" << endl;
+		 			}
+		 	      }
+		 	      else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
+		 			if(event->name[0] != '.')
+		 			{
+		 				//deleteFile(event->name);
+		 				cout << "Delete File" << endl;
+		 			}
+		 	      }
+		 	    }
+		 	    i += EVENT_SIZE + event->len;
+		 	  }
+		 		i = 0;
+		 		sleep(5);
+		 	}
 
-		// 	inotify_rm_watch( fd, wd );
-		// 	close( fd );
+		 	inotify_rm_watch( fd, wd );
+		 	close( fd );
 			
 		}
-
 
 };
 
@@ -426,12 +420,16 @@ int main(int argc, char *argv[])
 		cout << "Erro ao conectar" << endl;
 		return 0;
 	}
+
+	cli.sync_client();
+
+	cli.interface();
 	
-	// cli.sync_client();
+
 	//cout << "try to send file" << endl;
 	//cli.sendFile("arquivoCliente.txt");
-	cout << "try to download" << endl;
-	cli.downloadFile("arquivoCliente.txt");
+	//cout << "try to download" << endl;
+	//cli.downloadFile("arquivoCliente.txt");
 
 	// //Envia um arquivo
 	// fstream file;
