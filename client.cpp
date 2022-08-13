@@ -13,6 +13,7 @@
 #include <fstream>
 #include <errno.h>
 #include <sys/inotify.h>
+#include <cstdio>
 
 //variáveis inotify
 #define EVENT_SIZE ( sizeof (struct inotify_event) )
@@ -70,8 +71,8 @@ class ClientSocket{
 			strcpy(buffer,message.c_str());
 		
 			int bytes = write(this->sockfd , buffer , 10000*sizeof(char));
-			cout << buffer << endl;
-			cout << "Bytes enviados: " << bytes << endl;
+			// cout << buffer << endl;
+			// cout << "Bytes enviados: " << bytes << endl;
 		}
 		
 		int connectSocket(){
@@ -106,8 +107,9 @@ class ClientSocket{
 
 		}
 		void closeSocket(){
-			close(this->sockfd);
 			close(this->sync_sock);
+			//this->sendMessage("exit");
+			close(this->sockfd);
 		}
 		void download_all_files(){
 			string command = "DOWNLOADALLFILES";
@@ -227,11 +229,8 @@ class ClientSocket{
 			file.close();
 		}
 
-		void deleteFile(){ //TODO
-			//envia requisição de delete para o servidor
-			this->sendMessage("delete");
-			//envia o nome do arquivo para ser deletado pelo servidor
-			//this->sendMessage(filename);
+		void deleteFile(string filename){ //TODO
+			remove(filename.c_str());
 		}
 
 		// //Função para tratamento de comandos de interface do cliente
@@ -291,7 +290,8 @@ class ClientSocket{
 				}
 				else if(command == "delete"){
 					//Exclui o arquivo <filename.ext> de “sync_dir”
-					//deleteFile();
+					this->sendMessage(command);
+					this->sendMessage(file);
 					cout << "deletar arquivo" + file + "\n";
 				}
 				else{
@@ -342,9 +342,10 @@ class ClientSocket{
 				cout << "sync_dir_"+this->userId << " created" << endl;
 			}	
 
+			/*
 			if(pthread_create(&sync_thread_thread, NULL, sync_thread_helper, NULL)){
 				cout << "erro ao criar sync thread" << endl;
-			}			
+			}*/			
 		}
 		void inotifyInit(){
 	
@@ -405,8 +406,7 @@ class ClientSocket{
 		 	}
 
 		 	inotify_rm_watch( fd, wd );
-		 	close( fd );
-			
+		 	close( fd );			
 		}
 
 };
