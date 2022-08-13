@@ -169,7 +169,7 @@ void listenClient(int userId, int *clientSocket)
 			cout << buffer << endl;	
 			sendFile(userId, fileName, clientSocket);
 		}
-		if (strcmp(buffer, "list server") == 0))
+		if (strcmp(buffer, "list_client") == 0))
 		{
 			listServer(userId, clientSocket);
 		}
