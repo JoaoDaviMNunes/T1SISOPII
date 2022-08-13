@@ -1,24 +1,29 @@
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
-#include <netinet/in.h>
-#include <netdb.h> 
-#include <pthread.h>
-#include <iostream>
-#include <string>
-#include <fstream>
+#include <time.h>
 #include <errno.h>
-//#include <sys/inotify.h>
+#include <pthread.h>
+#include <sys/types.h>
+#include <sys/inotify.h>
+#include <pwd.h>
+#include <string>
+#include <iostream>
+#include <fstream>
 
 //variáveis inotify
 #define EVENT_SIZE ( sizeof (struct inotify_event) )
 #define EVENT_BUF_LEN ( 1024 * ( EVENT_SIZE + 16 ) )
 int fd;
 int wd;
+// Tem que mudar para adicionar o diretorio do cliente
+string dirName;
 
 
 #define SYNCSERVICE 2
@@ -48,6 +53,16 @@ class ClientSocket{
 
 
 
+		}
+		//https://stackoverflow.com/questions/230062/whats-the-best-way-to-check-if-a-file-exists-in-c
+		int exists(const char *fname){
+		    FILE *file;
+		    if (file = fopen(fname, "rb"))
+		    {
+			fclose(file);
+			return 1;
+		    }
+		    return 0;
 		}
 		int connectSocket(){
 			if (connect(this->sockfd,(struct sockaddr *) &this->serv_addr,sizeof(this->serv_addr)) < 0){ 
@@ -86,14 +101,11 @@ class ClientSocket{
 			cout << buffer << endl;
 			cout << "Bytes enviados: " << bytes << endl;
 		}
-		
-		void sync_dir_onConnect(){
-			string dirName = "sync_dir_";
-
-		}
+	
 		void closeSocket(){
 			close(this->sockfd);
 		}
+	
 		void download_all_files(){
 			string command = "DOWNLOADALLFILES";
 			int bytes = send(this->sync_sock, command.c_str(), command.length(),0);
@@ -176,8 +188,6 @@ class ClientSocket{
 		}
 		void receiveFile(){
 			//Gabriel*
-
-
 		}
 
 		void downloadFile(string fileName){ //TODO
@@ -282,6 +292,7 @@ class ClientSocket{
 		// 		}
 		// 	}while(request != "exit");
 		// }
+	
 		int sync_socket(){
 			int service = SYNCSERVICE;
 			int bytes;
@@ -316,7 +327,7 @@ class ClientSocket{
 
 			pthread_t sync_thread_thread;
 			cout << "here" << endl;
-			string dirName = "sync_dir_" + this->userId;
+			dirName = "sync_dir_" + this->userId;
 
 			if(mkdir(dirName.c_str(),0777) < 0){
 				cout << "Erro ao criar diretorio ou diretorio ja existente" << endl;
@@ -331,8 +342,8 @@ class ClientSocket{
 		}
 		void inotifyInit(){
 	
-			//fd = inotify_init();
-			//wd = inotify_add_watch( fd, sync_dir, IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
+			fd = inotify_init();
+			wd = inotify_add_watch( fd, dirName.c_str(), IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
 		}
 
 		static void *sync_thread_helper(void *context){
@@ -342,45 +353,8 @@ class ClientSocket{
 		void *sync_thread(){
 
 			sync_socket();
-			//download_all_files();
-
-			// int length, i = 0;
-			// char buffer[EVENT_BUF_LEN];
-			// string path;
-
-			// while(1){
-			//   /*read to determine the event change happens on “/sync_dir” directory. Actually this read blocks until the change event occurs*/
-			//   length = read( fd, buffer, EVENT_BUF_LEN ); 
-
-			//   /*checking for error*/
-			//   if ( length < 0 ) {
-			//     perror( "read" );
-			//   }
-
-			//   /*actually read return the list of change events happens. Here, read the change event one by one and process it accordingly.*/
-			//   while ( i < length ) {    
-			// 	struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];     
-			// 	if ( event->len ) {
-			//       if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
-			// 	strcpy(path, directory);
-			// 	strcat(path, "/");
-			// 	strcat(path, event->name);
-			// 	if(exists(path) && (event->name[0] != '.')){
-			// 			sendFile(path);
-			// 		}
-			//       }
-			//       else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
-			// 		if(event->name[0] != '.')
-			// 		{
-			// 			deleteFile(event->name);
-			// 		}
-			//       }
-			//     }
-			//     i += EVENT_SIZE + event->len;
-			//   }
-			// 	i = 0;
-			// 	sleep(10);
-			// }
+			download_all_files();
+			//incluir o resto
 		}
 
 
