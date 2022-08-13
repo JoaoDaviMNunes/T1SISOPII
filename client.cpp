@@ -10,6 +10,15 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <errno.h>
+#include <sys/inotify.h>
+
+//variáveis inotify
+#define EVENT_SIZE ( sizeof (struct inotify_event) )
+#define EVENT_BUF_LEN ( 1024 * ( EVENT_SIZE + 16 ) )
+int fd;
+int wd;
+string directory;
 
 
 #define PORT 4000
@@ -254,8 +263,52 @@ class ClientSocket{
 
 			}	
 		}
-		void *sync_thread(){
+		void inotifyInit(){
+	
+			fd = inotify_init();
+			wd = inotify_add_watch( fd, sync_dir, IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
+		}
+
+		void *sync_thread( ){
+
 			download_all_files();
+			int length, i = 0;
+			char buffer[EVENT_BUF_LEN];
+			string path;
+
+			while(1){
+			  /*read to determine the event change happens on “/sync_dir” directory. Actually this read blocks until the change event occurs*/
+			  length = read( fd, buffer, EVENT_BUF_LEN ); 
+
+			  /*checking for error*/
+			  if ( length < 0 ) {
+			    perror( "read" );
+			  }
+
+			  /*actually read return the list of change events happens. Here, read the change event one by one and process it accordingly.*/
+			  while ( i < length ) {    
+				struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];     
+				if ( event->len ) {
+			      if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
+				strcpy(path, directory);
+				strcat(path, "/");
+				strcat(path, event->name);
+				if(exists(path) && (event->name[0] != '.')){
+						sendFile(path);
+					}
+			      }
+			      else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
+					if(event->name[0] != '.')
+					{
+						deleteFile(event->name);
+					}
+			      }
+			    }
+			    i += EVENT_SIZE + event->len;
+			  }
+				i = 0;
+				sleep(10);
+			}
 		}
 };
 
