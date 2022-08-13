@@ -9,8 +9,10 @@
 #include <sys/stat.h>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 
 using namespace std;
+namespace fs = std::filesystem;
 
 #define PORT 4000
 
@@ -118,6 +120,15 @@ void sendFile(int userId,string filepath, int *clientSocket)
 	}
 }
 
+// Lista os arquivos do diretório do cliente
+// Tratamento do comando "list client"
+void listClient(int userId, int *clientSocket)
+{
+	std::string path = fs::current_path();
+   	for (const auto & entry : fs::directory_iterator(path))
+        	std::cout << entry.path() << std::endl;
+}
+
 void listenClient(int userId, int *clientSocket)
 {
 	cout << "listen client" << endl;
@@ -157,6 +168,10 @@ void listenClient(int userId, int *clientSocket)
 			strcpy(fileName, buffer);
 			cout << buffer << endl;	
 			sendFile(userId, fileName, clientSocket);
+		}
+		if (strcmp(buffer, "list server") == 0))
+		{
+			listServer(userId, clientSocket);
 		}
 		bytes = read(*clientSocket, buffer, 1000);
 	}
