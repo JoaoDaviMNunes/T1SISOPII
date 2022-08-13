@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <netinet/in.h>
 #include <netdb.h> 
+#include <pthread.h>
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -53,8 +54,8 @@ class ClientSocket{
 				printf("ERROR connecting\n");
 				return -1;
 			}
-
-			int bytes = send(this->sockfd, this->userId.c_str(), this->userId.length(),0);
+			int service = 1;
+			int bytes = send(this->sockfd, &service, this->userId.length(),0);
 			if(bytes < 0){
 				cout << "error connecting" << endl;
 			}
@@ -78,7 +79,11 @@ class ClientSocket{
 			return 1;
 		}
 		void sendMessage(std::string message){
-			int bytes = send(this->sockfd , message.c_str() , message.length() , 0 );
+			char buffer[10000];
+			strcpy(buffer,message.c_str());
+		
+			int bytes = write(this->sockfd , buffer , 10000*sizeof(char));
+			cout << buffer << endl;
 			cout << "Bytes enviados: " << bytes << endl;
 		}
 		
@@ -130,8 +135,8 @@ class ClientSocket{
 		}
 		void waitConfirm(){
 			int bytes;
-			char buff[256];
-			bytes = read(this->sockfd,buff,256);
+			char buff[10000];
+			bytes = read(this->sockfd,buff,10000);
 			cout << buff << endl;
 		}
 		int getFileSize(string filepath){
@@ -161,7 +166,7 @@ class ClientSocket{
 				while(!feof(file)){
 					fread(data, sizeof(data), 1, file);
 
-					bytes = send(this->sockfd, data, min(fileSize,10000),0);
+					bytes = write(this->sockfd, data, min(fileSize,10000));
 					if(bytes < 0)
 						cout << "erro ao enviar arquivo" << endl; 
 					fileSize -= 10000;
@@ -171,16 +176,38 @@ class ClientSocket{
 		}
 		void receiveFile(){
 			//Gabriel*
+
+
 		}
 
-		void downloadFile(){ //TODO
+		void downloadFile(string fileName){ //TODO
 			//envia requisição de download para o server
 			this->sendMessage("download");
+			this->sendMessage(fileName);
 
-			//aqui deve ter uma espera para o arquivo lido do servidor
+			ofstream file;
+			string dir = fileName;
+			file.open(dir);
+			int bytes;
+			char buffer[10000];
+			int fileSize;
+			bytes = read(this->sockfd,buffer,10000);
+			if(strcmp(buffer,"erro") == 0){
+				cout << "erro ao baixar arquivo do servidor";
+				return;
+			}
+			fileSize = atoi(buffer);
+			cout << fileName << endl << fileSize << endl;
+			if (fileSize > 0){
+				while (fileSize > 0)
+				{
+					bytes = read(this->sockfd, buffer, min(fileSize,10000));
+					file.write(buffer, min(fileSize, 10000));
 
-			//envia o nome do arquivo para o servidor
-			this->sendMessage("filename");
+					fileSize -= 10000;
+				}
+			}
+			file.close();
 		}
 
 		void deleteFile(){ //TODO
@@ -243,6 +270,7 @@ class ClientSocket{
 		// 			mySpreadsheet.xlsx*/
 		// 			this->sendMessage(aux);
 		// 			cout << "baixar arquivo" + file + "\n";
+		//			downloadFile(file);
 		// 		}
 		// 		else if(aux == "delete"){
 		// 			//Exclui o arquivo <filename.ext> de “sync_dir”
@@ -280,8 +308,13 @@ class ClientSocket{
 			bytes = send(this->sync_sock, &service, sizeof(SYNCSERVICE),0);
 
 			bytes = send(this->sync_sock, this->userId.c_str(), sizeof(this->userId),0);
+
+			char buffer[256];
+			bytes = read(this->sockfd, buffer,256); //Socket confirm
 		}
 		void sync_client(){
+
+			pthread_t sync_thread_thread;
 			cout << "here" << endl;
 			string dirName = "sync_dir_" + this->userId;
 
@@ -291,6 +324,10 @@ class ClientSocket{
 				cout << "sync_dir_"+this->userId << " created" << endl;
 
 			}	
+
+			if(pthread_create(&sync_thread_thread, NULL, sync_thread_helper, NULL)){
+				cout << "erro ao criar sync thread" << endl;
+			}
 		}
 		void inotifyInit(){
 	
@@ -298,10 +335,15 @@ class ClientSocket{
 			//wd = inotify_add_watch( fd, sync_dir, IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
 		}
 
-		void *sync_thread( ){
+		static void *sync_thread_helper(void *context){
+			return ((ClientSocket *)context)->sync_thread();
+		}
+
+		void *sync_thread(){
 
 			sync_socket();
-			download_all_files();
+			//download_all_files();
+
 			// int length, i = 0;
 			// char buffer[EVENT_BUF_LEN];
 			// string path;
@@ -355,9 +397,10 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 	
-	cli.sync_client();
+	//cli.sync_client();
 
-	cli.sendFile("arquivoCliente.txt");
+	// cli.sendFile("arquivoCliente.txt");
+	cli.downloadFile("arquivoCliente.txt");
 
 	// //Envia um arquivo
 	// fstream file;
