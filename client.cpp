@@ -54,8 +54,9 @@ class ClientSocket{
 
 
 		}
-		//https://stackoverflow.com/questions/230062/whats-the-best-way-to-check-if-a-file-exists-in-c
+		
 		int exists(const char *fname){
+		    //https://stackoverflow.com/questions/230062/whats-the-best-way-to-check-if-a-file-exists-in-c
 		    FILE *file;
 		    if (file = fopen(fname, "rb"))
 		    {
@@ -334,11 +335,12 @@ class ClientSocket{
 			}else{
 				cout << "sync_dir_"+this->userId << " created" << endl;
 
-			}	
-
+			}
+			inotifyInit();
+			
 			if(pthread_create(&sync_thread_thread, NULL, sync_thread_helper, NULL)){
 				cout << "erro ao criar sync thread" << endl;
-			}
+			}			
 		}
 		void inotifyInit(){
 	
@@ -351,7 +353,8 @@ class ClientSocket{
 		}
 
 		void *sync_thread(){
-
+			//https://www.thegeekstuff.com/2010/04/inotify-c-program-example/
+			
 			sync_socket();
 			download_all_files();
 			int length, i = 0;
