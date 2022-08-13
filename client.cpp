@@ -354,10 +354,53 @@ class ClientSocket{
 
 			sync_socket();
 			download_all_files();
-			//incluir o resto
+			int length, i = 0;
+			char buffer[EVENT_BUF_LEN];
+			char path[200];
+
+
+
+			while(1){
+			  //cout << "Monitorando" << endl;
+			  /*read to determine the event change happens on “/sync_dir” dirName.c_str(). Actually this read blocks until the change event occurs*/
+			  length = read( fd, buffer, EVENT_BUF_LEN ); 
+
+			  /*checking for error*/
+			  if ( length < 0 ) {
+			    perror( "read" );
+			  }
+
+			  /*actually read return the list of change events happens. Here, read the change event one by one and process it accordingly.*/
+			  while ( i < length ) { 
+				struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];     
+				if ( event->len ) {
+			      if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
+				strcpy(path, dirName.c_str());
+				strcat(path, "/");
+				strcat(path, event->name);
+				if(exists(path) && (event->name[0] != '.')){
+						//sendFile(path);
+						cout << "Send File" << endl;
+					}
+			      }
+			      else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
+					if(event->name[0] != '.')
+					{
+						//deleteFile(event->name);
+						cout << "Delete File" << endl;
+					}
+			      }
+			    }
+			    i += EVENT_SIZE + event->len;
+			  }
+				i = 0;
+				sleep(5);
+			}
+
+			inotify_rm_watch( fd, wd );
+			close( fd );
+			}
 		}
-
-
 };
 
 int main(int argc, char *argv[])
