@@ -49,22 +49,28 @@ class ClientSocket{
 
 
 		}
+		void sendMessage(std::string message){
+			char buffer[10000];
+			strcpy(buffer,message.c_str());
+		
+			int bytes = write(this->sockfd , buffer , 10000*sizeof(char));
+			cout << buffer << endl;
+			cout << "Bytes enviados: " << bytes << endl;
+		}
+		
 		int connectSocket(){
 			if (connect(this->sockfd,(struct sockaddr *) &this->serv_addr,sizeof(this->serv_addr)) < 0){ 
 				printf("ERROR connecting\n");
 				return -1;
 			}
 			int service = 1;
-			int bytes = send(this->sockfd, &service, this->userId.length(),0);
-			if(bytes < 0){
-				cout << "error connecting" << endl;
-			}
-			bytes = send(this->sockfd, this->userId.c_str(), this->userId.length(),0);
-			if(bytes < 0){
-				cout << "error connecting" << endl;
-			}
-			char buffer[256];
-			bytes = read(this->sockfd, buffer,256);
+			
+			sendMessage(to_string(service));
+			
+			sendMessage(this->userId);
+		
+			char buffer[10000];
+			int bytes = read(this->sockfd, buffer,10000);
 /*
 			int devicesConnected = 0;
 			bytes = read(this->sockfd, &devicesConnected, sizeof(int));
@@ -77,14 +83,6 @@ class ClientSocket{
 
 			}*/
 			return 1;
-		}
-		void sendMessage(std::string message){
-			char buffer[10000];
-			strcpy(buffer,message.c_str());
-		
-			int bytes = write(this->sockfd , buffer , 10000*sizeof(char));
-			cout << buffer << endl;
-			cout << "Bytes enviados: " << bytes << endl;
 		}
 		
 		void sync_dir_onConnect(){
@@ -202,7 +200,9 @@ class ClientSocket{
 				while (fileSize > 0)
 				{
 					bytes = read(this->sockfd, buffer, min(fileSize,10000));
+					cout << buffer << endl;
 					file.write(buffer, min(fileSize, 10000));
+					
 
 					fileSize -= 10000;
 				}
@@ -396,10 +396,11 @@ int main(int argc, char *argv[])
 		cout << "Erro ao conectar" << endl;
 		return 0;
 	}
+	//cout << "try to send file" << endl;
+	// cli.sync_client();
 	
-	//cli.sync_client();
-
-	// cli.sendFile("arquivoCliente.txt");
+	//cli.sendFile("arquivoCliente.txt");
+	cout << "try to download" << endl;
 	cli.downloadFile("arquivoCliente.txt");
 
 	// //Envia um arquivo
