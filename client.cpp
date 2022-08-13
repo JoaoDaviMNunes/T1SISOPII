@@ -31,6 +31,7 @@ string dirName;
 #define PORT 4000
 
 using namespace std;
+namespace fs = std::filesystem;
 
 string directory;
 class ClientSocket{
@@ -227,6 +228,15 @@ class ClientSocket{
 			//envia o nome do arquivo para ser deletado pelo servidor
 			//this->sendMessage(filename);
 		}
+	
+		// Lista os arquivos do diretório do cliente
+		// Tratamento do comando "list client"
+		void listClient()
+		{
+			std::string path = dirName;
+   			for (const auto & entry : fs::directory_iterator(path))
+        			std::cout << entry.path() << std::endl;
+		}
 
 		// //Função para tratamento de comandos de interface do cliente
 		// void interface(ClientSocket cli){
@@ -258,7 +268,8 @@ class ClientSocket{
 		// 			cout << "listar arquivos do servidor\n";
 		// 		}
 		// 		else if(request == "list_client"){
-		// 			//Lista os arquivos salvos no diretório “sync_dir”				
+		// 			//Lista os arquivos salvos no diretório “sync_dir”
+		//			this->cli.listClient();
 		// 			cout << "listar arquivos do cliente: \n";
 
 		// 		}
