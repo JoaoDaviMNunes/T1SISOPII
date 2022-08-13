@@ -26,6 +26,9 @@ int wd;
 #define PORT 4000
 
 using namespace std;
+string dirName;
+
+namespace fs = std::__fs::filesystem;
 
 string directory;
 class ClientSocket{
@@ -48,6 +51,24 @@ class ClientSocket{
 
 
 
+		}
+		// Lista os arquivos do diretório do cliente
+		// Tratamento do comando "list client"
+		void listClient()
+		{
+			std::string path = dirName;
+   			for (const auto & entry : fs::directory_iterator(path))
+        			std::cout << entry.path() << std::endl;
+		}
+		int exists(const char *fname){
+		    //https://stackoverflow.com/questions/230062/whats-the-best-way-to-check-if-a-file-exists-in-c
+		    FILE *file;
+		    if ((file = fopen(fname, "rb")))
+		    {
+			fclose(file);
+			return 1;
+		    }
+		    return 0;
 		}
 		void sendMessage(std::string message){
 			char buffer[10000];
@@ -340,47 +361,56 @@ class ClientSocket{
 		}
 
 		void *sync_thread(){
-
+			//https://www.thegeekstuff.com/2010/04/inotify-c-program-example/
+			
 			sync_socket();
-			//download_all_files();
+		// 	download_all_files();
+		// 	int length, i = 0;
+		// 	char buffer[EVENT_BUF_LEN];
+		// 	char path[200];
 
-			// int length, i = 0;
-			// char buffer[EVENT_BUF_LEN];
-			// string path;
 
-			// while(1){
-			//   /*read to determine the event change happens on “/sync_dir” directory. Actually this read blocks until the change event occurs*/
-			//   length = read( fd, buffer, EVENT_BUF_LEN ); 
 
-			//   /*checking for error*/
-			//   if ( length < 0 ) {
-			//     perror( "read" );
-			//   }
+		// 	while(1){
+		// 	  //cout << "Monitorando" << endl;
+		// 	  /*read to determine the event change happens on “/sync_dir” dirName.c_str(). Actually this read blocks until the change event occurs*/
+		// 	  length = read( fd, buffer, EVENT_BUF_LEN ); 
 
-			//   /*actually read return the list of change events happens. Here, read the change event one by one and process it accordingly.*/
-			//   while ( i < length ) {    
-			// 	struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];     
-			// 	if ( event->len ) {
-			//       if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
-			// 	strcpy(path, directory);
-			// 	strcat(path, "/");
-			// 	strcat(path, event->name);
-			// 	if(exists(path) && (event->name[0] != '.')){
-			// 			sendFile(path);
-			// 		}
-			//       }
-			//       else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
-			// 		if(event->name[0] != '.')
-			// 		{
-			// 			deleteFile(event->name);
-			// 		}
-			//       }
-			//     }
-			//     i += EVENT_SIZE + event->len;
-			//   }
-			// 	i = 0;
-			// 	sleep(10);
-			// }
+		// 	  /*checking for error*/
+		// 	  if ( length < 0 ) {
+		// 	    perror( "read" );
+		// 	  }
+
+		// 	  /*actually read return the list of change events happens. Here, read the change event one by one and process it accordingly.*/
+		// 	  while ( i < length ) { 
+		// 		struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];     
+		// 		if ( event->len ) {
+		// 	      if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
+		// 		strcpy(path, dirName.c_str());
+		// 		strcat(path, "/");
+		// 		strcat(path, event->name);
+		// 		if(exists(path) && (event->name[0] != '.')){
+		// 				//sendFile(path);
+		// 				cout << "Send File" << endl;
+		// 			}
+		// 	      }
+		// 	      else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
+		// 			if(event->name[0] != '.')
+		// 			{
+		// 				//deleteFile(event->name);
+		// 				cout << "Delete File" << endl;
+		// 			}
+		// 	      }
+		// 	    }
+		// 	    i += EVENT_SIZE + event->len;
+		// 	  }
+		// 		i = 0;
+		// 		sleep(5);
+		// 	}
+
+		// 	inotify_rm_watch( fd, wd );
+		// 	close( fd );
+			
 		}
 
 
@@ -396,9 +426,9 @@ int main(int argc, char *argv[])
 		cout << "Erro ao conectar" << endl;
 		return 0;
 	}
-	//cout << "try to send file" << endl;
-	// cli.sync_client();
 	
+	// cli.sync_client();
+	//cout << "try to send file" << endl;
 	//cli.sendFile("arquivoCliente.txt");
 	cout << "try to download" << endl;
 	cli.downloadFile("arquivoCliente.txt");
