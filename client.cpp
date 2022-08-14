@@ -14,6 +14,9 @@
 #include <errno.h>
 #include <sys/inotify.h>
 #include <cstdio>
+#include <dirent.h>
+#include <ctime>
+#include <pwd.h>
 
 //variáveis inotify
 #define EVENT_SIZE ( sizeof (struct inotify_event) )
@@ -29,7 +32,6 @@ int wd;
 using namespace std;
 string dirName;
 
-string directory;
 class ClientSocket{
 	private:
 		int sockfd,sync_sock;
@@ -53,8 +55,6 @@ class ClientSocket{
 		}
 		// Lista os arquivos do diretório do cliente
 		// Tratamento do comando "list client"
-		void listClient()
-		{}
 
 		int exists(const char *fname){
 		    //https://stackoverflow.com/questions/230062/whats-the-best-way-to-check-if-a-file-exists-in-c
@@ -263,9 +263,10 @@ class ClientSocket{
 					cout << "listar arquivos do servidor\n";
 				}
 				else if(request == "list_client"){
-					//Lista os arquivos salvos no diretório “sync_dir”				
+					//Lista os arquivos salvos no diretório “sync_dir”
+					//listClient((const char *)dirName.c_str());
+					listClient();
 					cout << "listar arquivos do cliente: \n";
-
 				}
 				else if(request == "get_sync_dir"){
 					//Cria o diretório “sync_dir” e inicia as atividades de sincronização
@@ -333,8 +334,7 @@ class ClientSocket{
 		void sync_client(){
 
 			pthread_t sync_thread_thread;
-			cout << "here" << endl;
-			string dirName = "sync_dir_" + this->userId;
+			dirName = "sync_dir_" + this->userId;
 
 			if(mkdir(dirName.c_str(),0777) < 0){
 				cout << "Erro ao criar diretorio ou diretorio ja existente" << endl;
@@ -342,10 +342,9 @@ class ClientSocket{
 				cout << "sync_dir_"+this->userId << " created" << endl;
 			}	
 
-			/*
-			if(pthread_create(&sync_thread_thread, NULL, sync_thread_helper, NULL)){
-				cout << "erro ao criar sync thread" << endl;
-			}*/			
+			//if(pthread_create(&sync_thread_thread, NULL, sync_thread_helper, NULL)){
+			//	cout << "erro ao criar sync thread" << endl;
+			//}		
 		}
 		void inotifyInit(){
 	
@@ -365,8 +364,6 @@ class ClientSocket{
 		 	int length, i = 0;
 		 	char buffer[EVENT_BUF_LEN];
 		 	char path[200];
-
-
 
 		 	while(1){
 		 	  //cout << "Monitorando" << endl;
@@ -409,6 +406,40 @@ class ClientSocket{
 		 	close( fd );			
 		}
 
+		void listClient(){
+
+			DIR *dir;
+			struct dirent *dent;			
+			dir = opendir((const char *) dirName.c_str());
+
+			string path, filename;
+
+			if(dir!=NULL)
+			{
+				while((dent=readdir(dir))!=NULL){
+
+					// O uso dessas strings aqui é uma gambiarra pra pegar o caminho de cada arquivo
+					filename = dent->d_name;
+					path = dirName + (string) "/" + filename;
+
+					struct stat info;
+					stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
+					if(dent->d_name[0] != '.'){
+						std::cout << 
+							"> Arquivo: " << dent->d_name << std::endl <<
+							"  Modification Time: " << 4+ctime(&info.st_mtime) << 
+							"  Access Time: " << 4+ctime(&info.st_atime) <<
+							"  Creation Time: " << 4+ctime(&info.st_ctime) << std::endl;
+					}
+				}
+				//fflush(stdout);
+				closedir(dir);
+			}
+			else{
+				std::cout << "Erro na abertura do diretório\n" << std::endl;
+				}			
+		}	
+
 };
 
 int main(int argc, char *argv[])
@@ -423,7 +454,6 @@ int main(int argc, char *argv[])
 	}
 
 	cli.sync_client();
-
 	cli.interface();
 	
 
