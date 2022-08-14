@@ -74,8 +74,7 @@ void receiveFile(int userId, string fileName, int fileSize, int *clientSocket)
 
 		while (fileSize > 0)
 		{
-			bytes = read(*clientSocket, buffer, min(fileSize, 10000));
-			cout << buffer << endl;
+			bytes = read(*clientSocket, buffer, 10000);
 			file.write(buffer, min(fileSize, 10000));
 
 			fileSize -= 10000;
@@ -110,7 +109,8 @@ void sendFile(int userId, string filepath, int *clientSocket)
 		{
 			fread(data, sizeof(data), 1, file);
 
-			bytes = write(*clientSocket, data, min(fileSize, 10000));
+			bytes = write(*clientSocket, data, 10000);
+			
 			if (bytes < 0)
 				cout << "erro ao enviar arquivo" << endl;
 			fileSize -= 10000;
@@ -189,24 +189,39 @@ void *startClientThread(void *socket)
 }
 int countFiles(string dirName)
 {
-	DIR *dp;
-	int i = 0;
-	struct dirent *ep;
-	dp = opendir(dirName.c_str());
+	DIR *dir;
+	struct dirent *dent;
+	dir = opendir((const char *) dirName.c_str());
 
-	if (dp != NULL)
+	string path, filename;
+	int count= 0;
+	if(dir!=NULL)
 	{
-		while ((ep = readdir(dp)))
-			i++;
+		while((dent=readdir(dir))!=NULL){
 
-		(void)closedir(dp);
+			// O uso dessas strings aqui é uma gambiarra pra pegar o caminho de cada arquivo
+			filename = dent->d_name;
+			path = dirName + (string) "/" + filename;
+
+			struct stat info;
+			stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
+			if(dent->d_name[0] != '.'){
+				count++;
+				
+			}
+		}
+		//fflush(stdout);
+		closedir(dir);
 	}
-	return i - 2;
+	else{
+		std::cout << "Erro na abertura do diretório\n" << std::endl;
+	}		
+	return count;	
 }
 void sendAllFiles(int userId, int *syncSocket)
 {
-	sendMessage(to_string(countFiles(to_string(userId))),syncSocket);
-	cout << countFiles(to_string(userId)+"/") << endl;
+
+	sendMessage(to_string(countFiles(to_string(userId)))+"/",syncSocket);
 	DIR *dir;
 	struct dirent *dent;
 	string dirName = to_string(userId);
@@ -225,7 +240,6 @@ void sendAllFiles(int userId, int *syncSocket)
 			if(filename[0] == '.')
 				continue;
 
-			cout << filename << endl;
 			sendMessage(filename,syncSocket);
 			struct stat info;
 			stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
@@ -242,6 +256,7 @@ void sendAllFiles(int userId, int *syncSocket)
 		std::cout << "Erro na abertura do diretório\n"
 				  << std::endl;
 	}
+	cout << "finished send all files" << endl;
 }
 void listenSync(int userId, int *clientSocket)
 {
@@ -275,6 +290,7 @@ void listenSync(int userId, int *clientSocket)
 			cout << "DOWNLOAD ALL FILES" << endl;
 			sendAllFiles(userId, clientSocket);
 		}
+		memset(buffer,0,10000);
 		bytes = read(*clientSocket, buffer, 10000);
 	}
 }
@@ -285,7 +301,8 @@ void *startSyncThread(void *socket)
 	int userId;
 	char buffer[10000];
 	// Le userId
-	userId = read(clientSockfd, buffer, 10000);
+	bytes = read(clientSockfd, buffer, 10000);
+	userId = atoi(buffer);
 	if (userId < 0)
 		cout << "Erro ao ler do socket" << endl;
 

@@ -155,7 +155,6 @@ void download_all_files(){
 	int qtFiles;
 	bytes = read(sync_sock, buffer, 10000);
 	qtFiles = atoi(buffer);
-	cout << qtFiles << endl;
 	string fileName;
 	for(int i=0;i<qtFiles;i++){
 
@@ -169,7 +168,6 @@ void download_all_files(){
 		FILE *file;
 		string dirFile = "sync_dir_" + userId + "/" + fileName;
 		file = fopen(dirFile.c_str(),"wb");
-		cout << "filename: " << fileName << endl;
 		int fileSize;
 		bytes = read(sync_sock, buffer, 10000);
 
@@ -186,6 +184,7 @@ void download_all_files(){
 		}
 		fclose(file);
 	}
+	cout << "finished download all files" << endl;
 }
 void waitConfirm(){
 	int bytes;
@@ -222,7 +221,7 @@ void sendFile(string filepath){
 			fread(data, sizeof(data), 1, file);
 			cout << data << endl;
 
-			bytes = write(sockfd, data, min(fileSize,10000));
+			bytes = write(sockfd, data, 10000);
 			if(bytes < 0)
 				cout << "erro ao enviar arquivo" << endl;
 			break; 
@@ -259,7 +258,7 @@ void downloadFile(string fileName){ //TODO
 	if (fileSize > 0){
 		while (fileSize > 0)
 		{
-			bytes = read(sockfd, buffer, min(fileSize,10000));
+			bytes = read(sockfd, buffer, 10000);
 			cout << buffer << endl;
 			file.write(buffer, min(fileSize, 10000));
 			
@@ -291,38 +290,6 @@ void deleteFile(const char *name){ // name é o nome do arquivo que vai deletar.
     }
     else{
         cout << "Erro na abertura do diretório" << endl;
-        return;
-    }
-    closedir(dir);
-}
-
-void deleteAllFiles(){
-    DIR *dir;
-    struct dirent *dent;
-    dir = opendir((const char *) dirName.c_str());
-    string path, filename;
-    int count = 0; // Contador de arquivos apagados, pra bonito
-	
-    if(dir!=NULL){ // Verifica se deu certo abrir o diretório.
-        while((dent=readdir(dir))!=NULL){// Iterador no diretório
-            if(dent->d_name[0] != '.'){ // Condicional pra nao pegar o diretório em si
-                filename = dent->d_name; // Pega o nome do arquivo
-                path = dirName + (string) "\\" + filename; // Caminho completo do arquivo
-
-                if(remove(path.c_str()) == 0){ // Tenta remover cada arquivo.
-                    count++;
-                    cout << "Arquivo \"" << filename << "\" deletado." << endl;
-                }
-                else{
-                    cout << "Erro ao apagar o arquivo \"" << filename << "\"" << endl;
-                }
-            }
-        }
-        cout << "> Operacao finalizada: " << count << " arquivos deletados." << endl;
-        return;
-    }
-    else{
-        cout << "Erro na abertura do diretório!" << endl;
         return;
     }
     closedir(dir);
