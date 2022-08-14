@@ -235,8 +235,8 @@ void downloadFile(string fileName){ //TODO
 	sendMessage(fileName);
 
 	ofstream file;
-	string dir = "sync_dir_" + userId + "/" + fileName;
-	file.open(dir);
+	//string dir = "sync_dir_" + userId + "/" + fileName;
+	file.open(fileName);
 	int bytes;
 	char buffer[10000];
 	int fileSize;
@@ -451,7 +451,6 @@ void *sync_thread(void *){
 void sync_client(){
 
 	pthread_t sync_thread_thread;
-	//dirName = "sync_dir_" + userId;
 	char directory[256];
 	getcwd(directory, 256);
 
@@ -485,17 +484,6 @@ int main(int argc, char *argv[])
 
 	sync_client();
 	interface();
-
-
-//cout << "try to send file" << endl;
-//sendFile("arquivoCliente.txt");
-//cout << "try to download" << endl;
-//downloadFile("arquivoCliente.txt");
-
-// //Envia um arquivo
-// fstream file;
-// file.open("arquivoCliente.txt");
-// sendFile(file);
 
 	closeSocket();
 
