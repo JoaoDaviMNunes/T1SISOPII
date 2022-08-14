@@ -296,6 +296,38 @@ void deleteFile(const char *name){ // name é o nome do arquivo que vai deletar.
     closedir(dir);
 }
 
+void deleteAllFiles(){
+    DIR *dir;
+    struct dirent *dent;
+    dir = opendir((const char *) dirName.c_str());
+    string path, filename;
+    int count = 0; // Contador de arquivos apagados, pra bonito
+	
+    if(dir!=NULL){ // Verifica se deu certo abrir o diretório.
+        while((dent=readdir(dir))!=NULL){// Iterador no diretório
+            if(dent->d_name[0] != '.'){ // Condicional pra nao pegar o diretório em si
+                filename = dent->d_name; // Pega o nome do arquivo
+                path = dirName + (string) "\\" + filename; // Caminho completo do arquivo
+
+                if(remove(path.c_str()) == 0){ // Tenta remover cada arquivo.
+                    count++;
+                    cout << "Arquivo \"" << filename << "\" deletado." << endl;
+                }
+                else{
+                    cout << "Erro ao apagar o arquivo \"" << filename << "\"" << endl;
+                }
+            }
+        }
+        cout << "> Operacao finalizada: " << count << " arquivos deletados." << endl;
+        return;
+    }
+    else{
+        cout << "Erro na abertura do diretório!" << endl;
+        return;
+    }
+    closedir(dir);
+}
+
 // //Função para tratamento de comandos de interface do cliente
 void interface(){
 
