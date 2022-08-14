@@ -76,7 +76,7 @@ class ClientSocket{
 		}
 		
 		int connectSocket(){
-			if (connect(this->sockfd,(struct sockaddr *) &this->serv_addr,sizeof(this->serv_addr)) < 0){ 
+			if (connect(this->sockfd,(struct sockaddr *) &this->serv_addr,sizeof(this->serv_addr)) < 0){
 				printf("ERROR connecting\n");
 				return -1;
 			}
@@ -185,7 +185,8 @@ class ClientSocket{
 
 					bytes = write(this->sockfd, data, min(fileSize,10000));
 					if(bytes < 0)
-						cout << "erro ao enviar arquivo" << endl; 
+						cout << "erro ao enviar arquivo" << endl;
+						break; 
 					fileSize -= 10000;
 				}
 				fclose(file);
@@ -193,8 +194,6 @@ class ClientSocket{
 		}
 		void receiveFile(){
 			//Gabriel*
-
-
 		}
 
 		void downloadFile(string fileName){ //TODO
@@ -265,8 +264,8 @@ class ClientSocket{
 				else if(request == "list_client"){
 					//Lista os arquivos salvos no diretório “sync_dir”
 					//listClient((const char *)dirName.c_str());
-					listClient();
 					cout << "listar arquivos do cliente: \n";
+					listClient();					
 				}
 				else if(request == "get_sync_dir"){
 					//Cria o diretório “sync_dir” e inicia as atividades de sincronização
@@ -331,32 +330,13 @@ class ClientSocket{
 			char buffer[256];
 			bytes = read(this->sockfd, buffer,256); //Socket confirm
 		}
-		void sync_client(){
 
-			pthread_t sync_thread_thread;
-			dirName = "sync_dir_" + this->userId;
-
-			if(mkdir(dirName.c_str(),0777) < 0){
-				cout << "Erro ao criar diretorio ou diretorio ja existente" << endl;
-			}else{
-				cout << "sync_dir_"+this->userId << " created" << endl;
-			}	
-
-			//if(pthread_create(&sync_thread_thread, NULL, sync_thread_helper, NULL)){
-			//	cout << "erro ao criar sync thread" << endl;
-			//}		
-		}
 		void inotifyInit(){
 	
 			fd = inotify_init();
 			wd = inotify_add_watch( fd, dirName.c_str(), IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
 		}
-
-		static void *sync_thread_helper(void *context){
-			return ((ClientSocket *)context)->sync_thread();
-		}
-
-		void *sync_thread(){
+		void *sync_thread(void){
 			//https://www.thegeekstuff.com/2010/04/inotify-c-program-example/
 			
 			sync_socket();
@@ -406,6 +386,26 @@ class ClientSocket{
 		 	close( fd );			
 		}
 
+		static void *sync_thread_helper(void *context){
+			return ((ClientSocket *)context)->sync_thread();
+		}
+		
+		void sync_client(){
+
+			//pthread_t sync_thread_thread;
+			dirName = "sync_dir_" + this->userId;
+
+			if(mkdir(dirName.c_str(),0777) < 0){
+				cout << "Erro ao criar diretorio ou diretorio ja existente" << endl;
+			}else{
+				cout << "sync_dir_"+this->userId << " created" << endl;
+			}	
+
+			//if(pthread_create(&sync_thread_thread, NULL, &ClientSocket::sync_thread_helper, NULL)){
+			//	cout << "erro ao criar sync thread" << endl;
+			//}		
+		}
+
 		void listClient(){
 
 			DIR *dir;
@@ -441,7 +441,14 @@ class ClientSocket{
 		}	
 
 };
+void pthreadSolver(ClientSocket *cliente){
 
+	pthread_t sync_thread_thread;
+
+	if(pthread_create(&sync_thread_thread, NULL, &ClientSocket::sync_thread_helper, &cliente)){
+		cout << "erro ao criar sync thread" << endl;
+	}
+}
 int main(int argc, char *argv[])
 {
 
@@ -454,6 +461,7 @@ int main(int argc, char *argv[])
 	}
 
 	cli.sync_client();
+	pthreadSolver(&cli);
 	cli.interface();
 	
 
