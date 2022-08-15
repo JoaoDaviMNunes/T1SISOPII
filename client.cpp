@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
-#include <netdb.h> 
+#include <netdb.h>
 #include <pthread.h>
 #include <iostream>
 #include <string>
@@ -17,7 +17,7 @@
 #include <dirent.h>
 #include <ctime>
 #include <pwd.h>
-#include <filesystem>
+#include <experimental/filesystem>
 #include <unistd.h>
 
 //variáveis inotify
@@ -27,9 +27,13 @@ int fd;
 int wd;
 
 
+pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+
+
 #define SYNCSERVICE 2
 #define REQUESTSERVICE 1
 #define PORT 4000
+#define BUFSIZE 10000
 
 using namespace std;
 
@@ -46,8 +50,8 @@ void ClientSocket(){
 	if((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 		std::cout << "ERROR while opening socket" << std::endl;
 
-	serv_addr.sin_family = AF_INET;     
-	serv_addr.sin_port = htons(PORT);    
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = htons(PORT);
 	serv_addr.sin_addr = *((struct in_addr *)server->h_addr);
 	bzero(&(serv_addr.sin_zero), 8);
 }
@@ -101,9 +105,9 @@ void listClient(){
 			struct stat info;
 			stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
 			if(dent->d_name[0] != '.'){
-				std::cout << 
+				std::cout <<
 				"> Arquivo: " << dent->d_name << std::endl <<
-				"  Modification Time: " << 4+ctime(&info.st_mtime) << 
+				"  Modification Time: " << 4+ctime(&info.st_mtime) <<
 				"  Access Time: " << 4+ctime(&info.st_atime) <<
 				"  Creation Time: " << 4+ctime(&info.st_ctime) << std::endl;
 			}
@@ -113,7 +117,7 @@ void listClient(){
 	}
 	else{
 		std::cout << "Erro na abertura do diretório\n" << std::endl;
-	}			
+	}
 }
 int connectSocket(){
 	if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0){
@@ -152,50 +156,6 @@ void closeSocket(){
 	sendMessage("exit");
 }
 
-void download_all_files(){
-    cout << "try to download all files" << endl;
-    string command = "DOWNLOADALLFILES";
-    char buffer[10000];
-    int bytes = sendMessageSync(command);
-    if(bytes < 0){
-        cout << "error while downloading all files" << endl;
-        return;
-    }
-    int qtFiles;
-    bytes = read(sync_sock, buffer, 10000);
-    qtFiles = atoi(buffer);
-    string fileName;
-    for(int i=0;i<qtFiles;i++){
-
-                //Le nome do arquivo
-        bytes = read(sync_sock,buffer,10000);
-        fileName = buffer;
-        if(bytes < 0){
-            cout << "error downloading files" << endl;
-        }
-
-        FILE *file;
-        string dirFile = "sync_dir_" + userId + "/" + fileName;
-        file = fopen(dirFile.c_str(),"wb");
-        int fileSize;
-        bytes = read(sync_sock, buffer, 10000);
-
-        fileSize = atoi(buffer);
-        //char buffer[10000];
-        if(fileSize > 0){
-
-            while(fileSize > 0){
-                bytes = read(sync_sock,buffer,10000);
-				cout << buffer << endl;
-                fwrite(buffer,min(fileSize,10000),1,file);
-                fileSize -= 10000;
-            }
-
-        }
-        fclose(file);
-    }
-    cout << "finished download all files" << endl;
-}
 
 void waitConfirm(){
 	int bytes;
@@ -203,10 +163,12 @@ void waitConfirm(){
 	bytes = read(sockfd,buff,10000);
 	cout << buff << endl;
 }
+
 int getFileSize(string filepath){
 	ifstream in(filepath, std::ifstream::ate | std::ifstream::binary);
-	return in.tellg(); 
+	return in.tellg();
 }
+
 void sendFile(string filepath){
 	FILE *file;
 	int fileSize;
@@ -222,7 +184,7 @@ void sendFile(string filepath){
 		}
 
 				//envia o nome do arquivo para o servidor
-		filename = filepath.substr(filepath.find_last_of(ch) + 1 ,filepath.length()- filepath.find(ch));				
+		filename = filepath.substr(filepath.find_last_of(ch) + 1 ,filepath.length()- filepath.find(ch));
 		sendMessage(filename);
 
 				//waitConfirm();
@@ -235,7 +197,7 @@ void sendFile(string filepath){
 			bytes = write(sockfd, data, min(fileSize,10000));
 			if(bytes < 0)
 				cout << "erro ao enviar arquivo" << endl;
-			break; 
+			break;
 			fileSize -= 10000;
 		}
 		fclose(file);
@@ -244,6 +206,7 @@ void sendFile(string filepath){
 		cout << "erro ao abrir o arquivo" << endl;
 	}
 }
+
 void receiveFile(){
 			//Gabriel*
 }
@@ -272,12 +235,57 @@ void downloadFile(string fileName){ //TODO
 			bytes = read(sockfd, buffer, min(fileSize,10000));
 			cout << buffer << endl;
 			file.write(buffer, min(fileSize, 10000));
-			
+
 
 			fileSize -= 10000;
 		}
 	}
 	file.close();
+}
+
+void download_all_files(){
+    cout << "try to download all files" << endl;
+    string command = "DOWNLOADALLFILES";
+    char buffer[BUFSIZE];
+    int bytes = sendMessageSync(command);
+    if(bytes < 0){
+        cout << "error while downloading all files" << endl;
+        return;
+    }
+    int qtFiles;
+    bytes = read(sync_sock, buffer, BUFSIZE);
+    qtFiles = atoi(buffer);
+    string fileName;
+    for(int i=0;i<qtFiles;i++){
+
+                //Le nome do arquivo
+        bytes = read(sync_sock,buffer,BUFSIZE);
+        fileName = buffer;
+        if(bytes < 0){
+            cout << "error downloading files" << endl;
+        }
+
+        FILE *file;
+        string dirFile = "sync_dir_" + userId + "/" + fileName;
+        file = fopen(dirFile.c_str(),"wb");
+        int fileSize;
+        bytes = read(sync_sock, buffer, BUFSIZE);
+
+        fileSize = atoi(buffer);
+        //char buffer[BUFSIZE];
+        if(fileSize > 0){
+
+            while(fileSize > 0){
+                bytes = read(sync_sock,buffer,BUFSIZE);
+				cout << buffer << endl;
+                fwrite(buffer,min(fileSize,BUFSIZE),1,file);
+                fileSize -= BUFSIZE;
+            }
+
+        }
+        fclose(file);
+    }
+    cout << "finished download all files" << endl;
 }
 
 void deleteFile(const char *name){ // name é o nome do arquivo que vai deletar.
@@ -288,9 +296,9 @@ void deleteFile(const char *name){ // name é o nome do arquivo que vai deletar.
     string path; // String auxiliar pra pegar o caminho completo do arquivo.
 
     if(dir!=NULL){ // Verifica se deu certo abrir o diretório.
-        path = dirName + (string) "/" + name; 
+        path = dirName + (string) "/" + name;
 
-        if(remove(path.c_str()) == 0){ // remove() precisa receber o caminho do arquivo. 
+        if(remove(path.c_str()) == 0){ // remove() precisa receber o caminho do arquivo.
             cout << "Arquivo \"" << name << "\" deletado." << endl;
             return;
         }
@@ -349,7 +357,7 @@ void interface(){
 	std::string request;
 
 	cout << "\nComandos:\nupload <path/filename.ext>\ndownload <filename.ext>\ndelete <filename.ext>\nlist_server\nlist_client\nget_sync_dir\nexit\n";
-	
+
 	do
 	{
 		std::string command, file;
@@ -374,16 +382,16 @@ void interface(){
 			cout << "listar arquivos do servidor\n";
 		}
 		else if(request == "list_client"){
-			//Lista os arquivos salvos no diretório “sync_dir”					
+			//Lista os arquivos salvos no diretório “sync_dir”
 			cout << "listar arquivos do cliente: \n";
-			listClient();					
+			listClient();
 		}
 		else if(request == "get_sync_dir"){
 			//Cria o diretório “sync_dir” e inicia as atividades de sincronização
 			//getSyncDir();
 			//sendFile(request);
 			cout << "sincronizar diretórios\n";
-		}		
+		}
 		else if(command == "upload"){
 			/*Envia o arquivo filename.ext para o servidor, colocando-o no “sync_dir” do
 			servidor e propagando-o para todos os dispositivos daquele usuário.
@@ -416,7 +424,7 @@ int sync_socket(){
 	struct hostent *server_sync;
 
 	server_sync = gethostbyname(hostname);
-    
+
     int service = SYNCSERVICE;
     int bytes;
 
@@ -429,13 +437,13 @@ int sync_socket(){
         return -1;
     }
 
-    serv_addr_sync.sin_family = AF_INET;     
-    serv_addr_sync.sin_port = htons(PORT);    
+    serv_addr_sync.sin_family = AF_INET;
+    serv_addr_sync.sin_port = htons(PORT);
     serv_addr_sync.sin_addr = *((struct in_addr *)server_sync->h_addr);
 
-    bzero(&(serv_addr_sync.sin_zero), 8);     
+    bzero(&(serv_addr_sync.sin_zero), 8);
 
-    if (connect(sync_sock,(struct sockaddr *) &serv_addr_sync,sizeof(serv_addr_sync)) < 0){ 
+    if (connect(sync_sock,(struct sockaddr *) &serv_addr_sync,sizeof(serv_addr_sync)) < 0){
         cout << "erro ao conectar sync_sock" << endl;
         return -1;
     }
@@ -457,11 +465,25 @@ void inotifyInit(){
 
 	cout << dirName << endl;
 }
+
 void *sync_thread(void *){
 	//https://www.thegeekstuff.com/2010/04/inotify-c-program-example/
-	
-	sync_socket();
- 	download_all_files();
+
+	//sync_socket();
+
+	deleteAllFiles();
+	cout << "Arquivos deletados" << endl;
+
+	download_all_files();
+
+	// SC
+	/*
+	pthread_mutex_lock(&m);
+	download_all_files();
+	pthread_mutex_unlock(&m);
+	*/
+	// SC
+
 	int length, i = 0;
 	char buffer[EVENT_BUF_LEN];
 	char path[200];
@@ -469,7 +491,7 @@ void *sync_thread(void *){
 	while(1){
 
  	  /*read to determine the event change happens on “/sync_dir” dirName.c_str(). Actually this read blocks until the change event occurs*/
-		length = read( fd, buffer, EVENT_BUF_LEN ); 
+		length = read( fd, buffer, EVENT_BUF_LEN );
 
  	  /*checking for error*/
 		if ( length < 0 ) {
@@ -477,8 +499,8 @@ void *sync_thread(void *){
 		}
 
  	  /*actually read return the list of change events happens. Here, read the change event one by one and process it accordingly.*/
-		while ( i < length ) { 
-			struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];     
+		while ( i < length ) {
+			struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];
 			if ( event->len ) {
 				if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
 
@@ -486,18 +508,18 @@ void *sync_thread(void *){
 					strcat(path, "/");
 					strcat(path, event->name);
 
-					if(exists(path) && (event->name[0] != '.')){		 				
+					if(exists(path) && (event->name[0] != '.')){
 						char fpath[256] = "sync_dir_";
 						strcat(fpath, userId.c_str());
 						strcat(fpath, "/");
-						strcat(fpath, event->name);						
+						strcat(fpath, event->name);
 						sendFile(fpath);
 						cout << "Send File" << endl;
 					}
 				}
 				else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
 					if(event->name[0] != '.')
-					{	
+					{
 						//sendMessage("deleteFile")
 						cout << "Delete File" << endl;
 					}
@@ -510,7 +532,7 @@ void *sync_thread(void *){
 	}
 
 	inotify_rm_watch( fd, wd );
-	close( fd );			
+	close( fd );
 }
 
 void sync_client(){
@@ -520,20 +542,20 @@ void sync_client(){
 	getcwd(directory, 256);
 
 	dirName = string(directory) + "/" + "sync_dir_" + userId;
-	
+
 	if(mkdir(dirName.c_str(),0777) < 0){
 		cout << "Erro ao criar diretorio ou diretorio ja existente" << endl;
 	}else{
 		cout << "sync_dir_"+userId << " created" << endl;
-	}	
+	}
 
 	if(pthread_create(&sync_thread_thread, NULL, sync_thread, NULL)){
         cout << "erro ao criar sync thread" << endl;
     }
-	inotifyInit();		
+	inotifyInit();
 }
 
-	
+
 
 int main(int argc, char *argv[])
 {
