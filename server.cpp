@@ -48,18 +48,22 @@ void initClient(int userId, int *clientSocket)
 	}
 }
 
-int getFileSize(string filepath)
-{
-	ifstream in(filepath, std::ifstream::ate | std::ifstream::binary);
-	return in.tellg();
+void closeSocket(int userId){
+	//close(sync_sock);
+	close(sockfd);
+	cout << "Conexão com " << userId << " encerrada!" << endl;
 }
-void sendMessage(std::string message, int *clientSocket)
-{
-	char buffer[10000];
-	strcpy(buffer, message.c_str());
 
-	int bytes = write(*clientSocket, buffer, 10000 * sizeof(char));
-}
+int getFileSize(string filepath){
+			ifstream in(filepath, std::ifstream::ate | std::ifstream::binary);
+    		return in.tellg(); 
+		}
+void sendMessage(std::string message, int *clientSocket){
+			char buffer[10000];
+			strcpy(buffer,message.c_str());
+		
+			int bytes = write(*clientSocket , buffer , 10000*sizeof(char));
+		}
 void receiveFile(int userId, string fileName, int fileSize, int *clientSocket)
 {
 	ofstream file;
@@ -67,14 +71,14 @@ void receiveFile(int userId, string fileName, int fileSize, int *clientSocket)
 	file.open(dir);
 	int bytes;
 	char buffer[10000];
-	cout << dir << " " << fileName << endl
-		 << fileSize << endl;
+	 cout << dir << " " << fileName << endl << fileSize << endl;
 	if (fileSize > 0)
 	{
 
 		while (fileSize > 0)
 		{
-			bytes = read(*clientSocket, buffer, 10000);
+			bytes = read(*clientSocket, buffer, min(fileSize, 10000));
+			cout << buffer << endl;
 			file.write(buffer, min(fileSize, 10000));
 
 			fileSize -= 10000;
@@ -83,7 +87,7 @@ void receiveFile(int userId, string fileName, int fileSize, int *clientSocket)
 	file.close();
 }
 
-void sendFile(int userId, string filepath, int *clientSocket)
+void sendFile(int userId,string filepath, int *clientSocket)
 {
 	FILE *file;
 	int fileSize;
@@ -91,36 +95,34 @@ void sendFile(int userId, string filepath, int *clientSocket)
 	// string filename;
 	// char ch = '/';
 
-	string dir = to_string(userId) + "/" + filepath;
+	string dir = to_string(userId)+"/"+filepath;
 	if ((file = fopen(dir.c_str(), "rb")))
 	{
 		// envia requisição de envio para o servidor
-		fileSize = getFileSize(to_string(userId) + "/" + filepath);
+		fileSize = getFileSize(to_string(userId)+"/"+filepath);
+		
 
 		// envia o nome do arquivo para o servidor
 		// filename = filepath.substr(filepath.find_last_of(ch) + 1 ,filepath.length()- filepath.find(ch));
 		// this->sendMessage(filename);
 
 		// waitConfirm();
-		sendMessage(to_string(fileSize), clientSocket);
-
+		sendMessage(to_string(fileSize),clientSocket);
+		
 		char data[10000];
 		while (!feof(file))
 		{
 			fread(data, sizeof(data), 1, file);
 
-			bytes = write(*clientSocket, data, 10000);
-			
+			bytes = write(*clientSocket, data, min(fileSize, 10000));
 			if (bytes < 0)
 				cout << "erro ao enviar arquivo" << endl;
 			fileSize -= 10000;
 		}
 		fclose(file);
-	}
-	else
-	{
+	}else{
 
-		sendMessage("erro", clientSocket);
+		sendMessage("erro",clientSocket);
 	}
 }
 
@@ -133,7 +135,7 @@ void listenClient(int userId, int *clientSocket)
 
 	bytes = read(*clientSocket, buffer, 10000);
 
-	// cout << buffer << endl;
+	//cout << buffer << endl;
 	if (bytes < 0)
 		cout << "erro ao ler requisicao do cliente" << endl;
 
@@ -162,11 +164,12 @@ void listenClient(int userId, int *clientSocket)
 			// cout << buffer << endl;
 			bytes = read(*clientSocket, buffer, 10000);
 			strcpy(fileName, buffer);
-			cout << buffer << endl;
+			cout << buffer << endl;	
 			sendFile(userId, fileName, clientSocket);
 		}
 		bytes = read(*clientSocket, buffer, 10000);
 	}
+	//closeSocket(userId);
 }
 
 void *startClientThread(void *socket)
@@ -178,90 +181,91 @@ void *startClientThread(void *socket)
 	// Le userId
 	bytes = read(clientSockfd, buffer, 10000);
 	userId = atoi(buffer);
-	if (bytes < 0)
+	if(bytes < 0)
 		cout << "erro ao ler userID" << endl;
 	char isConnected = 'Y';
 	// Informa ao usuário que conseguiu conectar ao server
 
-	sendMessage("Y", socketAdress);
+
+	sendMessage("Y",socketAdress);
 	initClient(userId, socketAdress);
 	listenClient(userId, socketAdress);
 }
 int countFiles(string dirName)
 {
-	DIR *dir;
-	struct dirent *dent;
-	dir = opendir((const char *) dirName.c_str());
+    DIR *dir;
+    struct dirent *dent;
+    dir = opendir((const char *) dirName.c_str());
 
-	string path, filename;
-	int count= 0;
-	if(dir!=NULL)
-	{
-		while((dent=readdir(dir))!=NULL){
+    string path, filename;
+    int count= 0;
+    if(dir!=NULL)
+    {
+        while((dent=readdir(dir))!=NULL){
 
-			// O uso dessas strings aqui é uma gambiarra pra pegar o caminho de cada arquivo
-			filename = dent->d_name;
-			path = dirName + (string) "/" + filename;
+            // O uso dessas strings aqui é uma gambiarra pra pegar o caminho de cada arquivo
+            filename = dent->d_name;
+            path = dirName + (string) "/" + filename;
 
-			struct stat info;
-			stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
-			if(dent->d_name[0] != '.'){
-				count++;
-				
-			}
-		}
-		//fflush(stdout);
-		closedir(dir);
-	}
-	else{
-		std::cout << "Erro na abertura do diretório\n" << std::endl;
-	}		
-	return count;	
+            struct stat info;
+            stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
+            if(dent->d_name[0] != '.'){
+                count++;
+                
+            }
+        }
+        //fflush(stdout);
+        closedir(dir);
+    }
+    else{
+        std::cout << "Erro na abertura do diretório\n" << std::endl;
+    }        
+    return count;    
 }
+
 void sendAllFiles(int userId, int *syncSocket)
-{
+{	
+	cout << to_string(userId) + "/" << endl;
 
-	sendMessage(to_string(countFiles(to_string(userId)))+"/",syncSocket);
-	DIR *dir;
-	struct dirent *dent;
-	string dirName = to_string(userId);
-	dir = opendir((const char *)dirName.c_str());
+    sendMessage(to_string(countFiles(to_string(userId) + "/")),syncSocket);
+    DIR *dir;
+    struct dirent *dent;
+    string dirName = to_string(userId);
+    dir = opendir((const char *)dirName.c_str());
 
-	string path, filename;
+    string path, filename;
 
-	if (dir != NULL)
-	{
-		while ((dent = readdir(dir)) != NULL)
-		{
-		
-			// O uso dessas strings aqui é uma gambiarra pra pegar o caminho de cada arquivo
-			filename = dent->d_name;
-			path = dirName + (string) "/" + filename;
-			if(filename[0] == '.')
-				continue;
+    if (dir != NULL)
+    {
+        while ((dent = readdir(dir)) != NULL)
+        {        
+            // O uso dessas strings aqui é uma gambiarra pra pegar o caminho de cada arquivo
+            filename = dent->d_name;
+            path = dirName + (string) "/" + filename;
+            if(filename[0] == '.')
+                continue;
 
-			sendMessage(filename,syncSocket);
-			struct stat info;
-			stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
-			if (dent->d_name[0] != '.')
-			{
-				sendFile(userId,filename,syncSocket);
-			}
-		}
-		// fflush(stdout);
-		closedir(dir);
-	}
-	else
-	{
-		std::cout << "Erro na abertura do diretório\n"
-				  << std::endl;
-	}
-	cout << "finished send all files" << endl;
+            sendMessage(filename, syncSocket);
+            struct stat info;
+            stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
+            if (dent->d_name[0] != '.')
+            {
+                sendFile(userId, filename, syncSocket);
+            }
+        }
+        // fflush(stdout);
+        closedir(dir);
+    }
+    else
+    {
+        std::cout << "Erro na abertura do diretório\n"
+                  << std::endl;
+    }
+    cout << "finished send all files" << endl;
 }
+
 void listenSync(int userId, int *clientSocket)
 {
-
-	cout << "listenSync" << endl;
 	int bytes;
 	char buffer[10000];
 
@@ -286,11 +290,11 @@ void listenSync(int userId, int *clientSocket)
 			receiveFile(userId, fileName, ifileSize, clientSocket);
 		}
 		if (strcmp(buffer, "DOWNLOADALLFILES") == 0)
-		{
-			cout << "DOWNLOAD ALL FILES" << endl;
-			sendAllFiles(userId, clientSocket);
-		}
-		memset(buffer,0,10000);
+        {
+            cout << "DOWNLOAD ALL FILES" << endl;
+			cout << "user Id = " << userId << endl;
+            sendAllFiles(userId, clientSocket);
+        }
 		bytes = read(*clientSocket, buffer, 10000);
 	}
 }
@@ -309,8 +313,8 @@ void *startSyncThread(void *socket)
 	char isConnected = 'Y';
 	// Informa ao usuário que conseguiu conectar ao server
 
-	sendMessage("Y", socketAdress);
-	if (bytes < 0)
+	sendMessage("Y",socketAdress);
+	if (bytes < 1)
 	{
 		cout << "Erro ao informar usuario" << endl;
 	}
@@ -318,9 +322,9 @@ void *startSyncThread(void *socket)
 	listenSync(userId, socketAdress);
 }
 
+
 int main(int argc, char *argv[])
 {
-	int test = 1;
 
 	openSocket();
 	listen(sockfd, 5);
@@ -356,7 +360,6 @@ int main(int argc, char *argv[])
 			}
 			else if (typeOfService == 2)
 			{ // Sincronização com cliente
-				cout << "Starting sync thread" << endl;
 				if (pthread_create(&syncThread, NULL, startSyncThread, &clientSockfd))
 				{
 					cout << "Erro ao abrir a thread do cliente" << endl;
@@ -368,4 +371,3 @@ int main(int argc, char *argv[])
 	close(sockfd);
 	return 0;
 }
-
