@@ -9,33 +9,22 @@
 #include <sys/stat.h>
 #include <iostream>
 #include <fstream>
-#include <filesystem>
 #include <dirent.h>
+#include <experimental/filesystem>
 
 using namespace std;
 
 #define PORT 4000
 
-int sockfd, clientSockfd, n;
-socklen_t clilen;
-char buffer[10000];
-struct sockaddr_in serv_addr, cli_addr;
 
+
+char buffer[10000];
 void openSocket()
 {
-	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-		cout << "ERROR opening socket" << endl;
 
-	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_port = htons(PORT);
-	serv_addr.sin_addr.s_addr = INADDR_ANY;
-	bzero(&(serv_addr.sin_zero), 8);
-
-	if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-		cout << "ERROR on binding" << endl;
 }
 
-void initClient(int userId, int *clientSocket)
+void initClient(int userId, int clientSocket)
 {
 	if (mkdir(to_string(userId).c_str(), 0777) < 0)
 	{
@@ -48,23 +37,23 @@ void initClient(int userId, int *clientSocket)
 	}
 }
 
-void closeSocket(int userId){
+void closeSocket(int userId, int socket){
 	//close(sync_sock);
-	close(sockfd);
+	close(socket);
 	cout << "Conexão com " << userId << " encerrada!" << endl;
 }
 
 int getFileSize(string filepath){
-			ifstream in(filepath, std::ifstream::ate | std::ifstream::binary);
-    		return in.tellg(); 
+        ifstream in(filepath, std::ifstream::ate | std::ifstream::binary);
+    		return in.tellg();
 		}
-void sendMessage(std::string message, int *clientSocket){
+void sendMessage(std::string message, int clientSocket){
 			char buffer[10000];
 			strcpy(buffer,message.c_str());
-		
-			int bytes = write(*clientSocket , buffer , 10000*sizeof(char));
+
+			int bytes = write(clientSocket , buffer , 10000*sizeof(char));
 		}
-void receiveFile(int userId, string fileName, int fileSize, int *clientSocket)
+void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 {
 	ofstream file;
 	string dir = to_string(userId) + "/" + fileName;
@@ -77,9 +66,11 @@ void receiveFile(int userId, string fileName, int fileSize, int *clientSocket)
 
 		while (fileSize > 0)
 		{
-			bytes = read(*clientSocket, buffer, min(fileSize, 10000));
+			bytes = read(clientSocket, buffer, 10000);
 			cout << buffer << endl;
-			file.write(buffer, min(fileSize, 10000));
+			//file.write(buffer, min(fileSize, 10000)); Certo
+			file.write(buffer, min(10000,fileSize));
+
 
 			fileSize -= 10000;
 		}
@@ -87,7 +78,7 @@ void receiveFile(int userId, string fileName, int fileSize, int *clientSocket)
 	file.close();
 }
 
-void sendFile(int userId,string filepath, int *clientSocket)
+void sendFile(int userId,string filepath, int clientSocket)
 {
 	FILE *file;
 	int fileSize;
@@ -100,7 +91,7 @@ void sendFile(int userId,string filepath, int *clientSocket)
 	{
 		// envia requisição de envio para o servidor
 		fileSize = getFileSize(to_string(userId)+"/"+filepath);
-		
+
 
 		// envia o nome do arquivo para o servidor
 		// filename = filepath.substr(filepath.find_last_of(ch) + 1 ,filepath.length()- filepath.find(ch));
@@ -108,13 +99,15 @@ void sendFile(int userId,string filepath, int *clientSocket)
 
 		// waitConfirm();
 		sendMessage(to_string(fileSize),clientSocket);
-		
+		cout << filepath << endl;
+		cout << fileSize << endl;
+
 		char data[10000];
 		while (!feof(file))
 		{
 			fread(data, sizeof(data), 1, file);
 
-			bytes = write(*clientSocket, data, min(fileSize, 10000));
+			bytes = write(clientSocket, data, 10000);
 			if (bytes < 0)
 				cout << "erro ao enviar arquivo" << endl;
 			fileSize -= 10000;
@@ -126,14 +119,15 @@ void sendFile(int userId,string filepath, int *clientSocket)
 	}
 }
 
-void listenClient(int userId, int *clientSocket)
+void listenClient(int userId, int clientSocket)
 {
 	cout << "listen client" << endl;
 	int bytes;
 	char buffer[10000];
 	char confirm[10] = "ok";
 
-	bytes = read(*clientSocket, buffer, 10000);
+	bytes = read(clientSocket, buffer, 10000);
+	cout << "ListenClient: " << buffer << endl;
 
 	//cout << buffer << endl;
 	if (bytes < 0)
@@ -146,15 +140,16 @@ void listenClient(int userId, int *clientSocket)
 			char fileName[10000];
 			char fileSize[10000];
 			int ifileSize;
-			// cout << buffer << endl;
-			bytes = read(*clientSocket, buffer, 10000);
+			cout << "waiting " << endl;
+			bytes = read(clientSocket, buffer, 10000);
 			strcpy(fileName, buffer);
-			cout << buffer << endl;
+			cout << "Filename upload: " << buffer << endl;
 			// send(*clientSocket,confirm,sizeof(confirm),0);
-			bytes = read(*clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer, 10000);
 			// cout << buffer << endl;
 			strcpy(fileSize, buffer);
 			ifileSize = atoi(fileSize);
+			cout << "Filesize upload: " << buffer << endl;
 			receiveFile(userId, fileName, ifileSize, clientSocket);
 		}
 		if (strcmp(buffer, "download") == 0)
@@ -162,24 +157,25 @@ void listenClient(int userId, int *clientSocket)
 			cout << "here" << endl;
 			char fileName[10000];
 			// cout << buffer << endl;
-			bytes = read(*clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer, 10000);
 			strcpy(fileName, buffer);
-			cout << buffer << endl;	
+			cout << buffer << endl;
 			sendFile(userId, fileName, clientSocket);
 		}
-		bytes = read(*clientSocket, buffer, 10000);
+		memset(buffer,0,10000);
+		bytes = read(clientSocket, buffer, 10000);
 	}
 	//closeSocket(userId);
 }
 
-void *startClientThread(void *socket)
+void *startClientThread(void *socketAd)
 {
-	int *socketAdress = (int *)socket;
+    int *socket = (int *)socketAd;
 	int bytes;
 	int userId;
 	char buffer[10000];
 	// Le userId
-	bytes = read(clientSockfd, buffer, 10000);
+	bytes = read(*socket, buffer, 10000);
 	userId = atoi(buffer);
 	if(bytes < 0)
 		cout << "erro ao ler userID" << endl;
@@ -187,9 +183,9 @@ void *startClientThread(void *socket)
 	// Informa ao usuário que conseguiu conectar ao server
 
 
-	sendMessage("Y",socketAdress);
-	initClient(userId, socketAdress);
-	listenClient(userId, socketAdress);
+	sendMessage("Y",*socket);
+	initClient(userId, *socket);
+	listenClient(userId, *socket);
 }
 int countFiles(string dirName)
 {
@@ -211,7 +207,7 @@ int countFiles(string dirName)
             stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
             if(dent->d_name[0] != '.'){
                 count++;
-                
+
             }
         }
         //fflush(stdout);
@@ -219,12 +215,12 @@ int countFiles(string dirName)
     }
     else{
         std::cout << "Erro na abertura do diretório\n" << std::endl;
-    }        
-    return count;    
+    }
+    return count;
 }
 
-void sendAllFiles(int userId, int *syncSocket)
-{	
+void sendAllFiles(int userId, int syncSocket)
+{
 	cout << to_string(userId) + "/" << endl;
 
     sendMessage(to_string(countFiles(to_string(userId) + "/")),syncSocket);
@@ -238,7 +234,7 @@ void sendAllFiles(int userId, int *syncSocket)
     if (dir != NULL)
     {
         while ((dent = readdir(dir)) != NULL)
-        {        
+        {
             // O uso dessas strings aqui é uma gambiarra pra pegar o caminho de cada arquivo
             filename = dent->d_name;
             path = dirName + (string) "/" + filename;
@@ -264,13 +260,13 @@ void sendAllFiles(int userId, int *syncSocket)
     cout << "finished send all files" << endl;
 }
 
-void listenSync(int userId, int *clientSocket)
+void listenSync(int userId, int clientSocket)
 {
 	int bytes;
 	char buffer[10000];
 
-	bytes = read(*clientSocket, buffer, 10000);
-	cout << buffer << endl;
+	bytes = read(clientSocket, buffer, 10000);
+	cout << "ListenSync: " << buffer << endl;
 	if (bytes < 0)
 		cout << "erro ao ler requisicao do cliente" << endl;
 
@@ -281,10 +277,10 @@ void listenSync(int userId, int *clientSocket)
 			char fileName[10000];
 			char fileSize[10000];
 			int ifileSize;
-			bytes = read(*clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer, 10000);
 			strcpy(fileName, buffer);
 			// send(*clientSocket,confirm,sizeof(confirm),0);
-			bytes = read(*clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer, 10000);
 			strcpy(fileSize, buffer);
 			ifileSize = atoi(fileSize);
 			receiveFile(userId, fileName, ifileSize, clientSocket);
@@ -295,8 +291,10 @@ void listenSync(int userId, int *clientSocket)
 			cout << "user Id = " << userId << endl;
             sendAllFiles(userId, clientSocket);
         }
-		bytes = read(*clientSocket, buffer, 10000);
+        memset(buffer,0,10000);
+		bytes = read(clientSocket, buffer, 10000);
 	}
+	sendMessage("exit",clientSocket);
 }
 void *startSyncThread(void *socket)
 {
@@ -305,7 +303,7 @@ void *startSyncThread(void *socket)
 	int userId;
 	char buffer[10000];
 	// Le userId
-	bytes = read(clientSockfd, buffer, 10000);
+	bytes = read(*socketAdress, buffer, 10000);
 	userId = atoi(buffer);
 	if (userId < 0)
 		cout << "Erro ao ler do socket" << endl;
@@ -313,20 +311,31 @@ void *startSyncThread(void *socket)
 	char isConnected = 'Y';
 	// Informa ao usuário que conseguiu conectar ao server
 
-	sendMessage("Y",socketAdress);
+	sendMessage("Y",*socketAdress);
 	if (bytes < 1)
 	{
 		cout << "Erro ao informar usuario" << endl;
 	}
 
-	listenSync(userId, socketAdress);
+	listenSync(userId, *socketAdress);
 }
 
 
 int main(int argc, char *argv[])
 {
+int sockfd, clientSockfd, n;
+socklen_t clilen;
+struct sockaddr_in serv_addr, cli_addr;
+if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+		cout << "ERROR opening socket" << endl;
 
-	openSocket();
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_port = htons(PORT);
+	serv_addr.sin_addr.s_addr = INADDR_ANY;
+	bzero(&(serv_addr.sin_zero), 8);
+
+	if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+		cout << "ERROR on binding" << endl;
 	listen(sockfd, 5);
 
 	clilen = sizeof(struct sockaddr_in);
