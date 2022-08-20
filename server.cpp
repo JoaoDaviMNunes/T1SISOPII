@@ -21,6 +21,10 @@ using namespace std;
 map<int,int > mSockToUserId;
 map<int,set<int> > mUserIdToSocks;
 
+pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+
+bool hasNewFile = false;
+
 char buffer[10000];
 void openSocket()
 {
@@ -55,6 +59,7 @@ void sendMessage(std::string message, int clientSocket){
 void closeSocket(int userId){
 	//close(sync_sock);
 	for(auto x:mUserIdToSocks[userId]){
+		cout << x << endl;
 		sendMessage("exit",x);
 		close(x);
 	}
@@ -62,6 +67,7 @@ void closeSocket(int userId){
 }
 void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 {
+	pthread_mutex_lock(&m);
 	ofstream file;
 	string dir = to_string(userId) + "/" + fileName;
 	file.open(dir);
@@ -83,6 +89,8 @@ void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 		}
 	}
 	file.close();
+	hasNewFile = true;
+	pthread_mutex_unlock(&m);
 }
 
 void sendFile(int userId,string filepath, int clientSocket)
@@ -158,6 +166,8 @@ void listenClient(int userId, int clientSocket)
 			ifileSize = atoi(fileSize);
 			cout << "Filesize upload: " << buffer << endl;
 			receiveFile(userId, fileName, ifileSize, clientSocket);
+
+			
 		}
 		if (strcmp(buffer, "download") == 0)
 		{
@@ -293,6 +303,7 @@ void listenSync(int userId, int clientSocket)
 			strcpy(fileSize, buffer);
 			ifileSize = atoi(fileSize);
 			receiveFile(userId, fileName, ifileSize, clientSocket);
+			
 		}
 		if (strcmp(buffer, "DOWNLOADALLFILES") == 0)
         {
@@ -331,6 +342,36 @@ void *startSyncThread(void *socket)
 	listenSync(userId, *socketAdress);
 }
 
+void *startPropagateThread(void *socket)
+{
+	int *socketAdress = (int *)socket;
+
+
+	int bytes;
+	int userId;
+	char buffer[10000];
+	// Le userId
+	bytes = read(*socketAdress, buffer, 10000);
+	userId = atoi(buffer);
+	if (userId < 0)
+		cout << "Erro ao ler do socket" << endl;
+
+	mUserIdToSocks[userId].insert(*socketAdress);
+
+	char isConnected = 'Y';
+	// Informa ao usuário que conseguiu conectar ao server
+
+	sendMessage("Y",*socketAdress);
+	// Le userId
+	while(true){
+		if(hasNewFile){
+			cout << "propagate" << endl;
+			hasNewFile = false;
+			sendMessage("propagate",*socketAdress);
+		}
+	}
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -350,7 +391,7 @@ if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 	listen(sockfd, 5);
 
 	clilen = sizeof(struct sockaddr_in);
-	pthread_t clientThread, syncThread;
+	pthread_t clientThread, syncThread, propThread;
 	cout << "Server incializado..." << endl;
 	while (true)
 	{
@@ -380,7 +421,16 @@ if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 			}
 			else if (typeOfService == 2)
 			{ // Sincronização com cliente
+				cout << "Start Sync Thread" << endl;
 				if (pthread_create(&syncThread, NULL, startSyncThread, &clientSockfd))
+				{
+					cout << "Erro ao abrir a thread do cliente" << endl;
+				}
+			}
+			else if (typeOfService == 3)
+			{ // Sincronização com cliente
+				cout << "Start Propagate Thread" << endl;
+				if (pthread_create(&propThread, NULL, startPropagateThread, &clientSockfd))
 				{
 					cout << "Erro ao abrir a thread do cliente" << endl;
 				}
