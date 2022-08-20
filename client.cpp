@@ -375,6 +375,11 @@ void deleteAllFiles(){
     closedir(dir);
 }
 
+void sendDeleteFile(string filename){
+	sendMessage("delete");
+	sendMessage(filename);
+}
+
 // //Função para tratamento de comandos de interface do cliente
 void interface(){
 
@@ -434,6 +439,7 @@ void interface(){
 		else if(command == "delete"){
 			//Exclui o arquivo <filename.ext> de “sync_dir”
 			deleteFile(file.c_str());
+			sendDeleteFile(file);
 			cout << "deletar arquivo" + file + "\n";
 		}
 		else{
@@ -651,6 +657,9 @@ void *sync_thread_propagate(void *socket){
 			cout << "Downloading New Files..." << endl; 
 			download_all_files(gsynckSock);
 			pthread_mutex_unlock(&m2);
+		}
+		if(strcmp(buffer,"delete") == 0){
+
 		}
 		memset(buffer,0,10000);
 		bytes = read(*socketAdress, buffer, 10000);

@@ -65,6 +65,31 @@ void closeSocket(int userId){
 	}
 	cout << "All sockets closed" << endl;
 }
+
+void deleteFile(int userId, int clientSocket, string filename){
+	DIR *dir;
+    dir = opendir((const char *) to_string(userId).c_str()); // Tenta abrir o diretório.
+	
+    string path; // String auxiliar pra pegar o caminho completo do arquivo.
+
+    if(dir!=NULL){ // Verifica se deu certo abrir o diretório.
+        path = to_string(userId) + (string) "/" + filename;
+
+        if(remove(path.c_str()) == 0){ // remove() precisa receber o caminho do arquivo.
+            cout << "Arquivo \"" << filename << "\" deletado." << endl;
+            return;
+        }
+        else{ // Cai aqui se o remove() não funfou
+            cout << "Erro ao apagar o arquivo!" << endl;
+            return;
+        }
+    }
+    else{
+        cout << "Erro na abertura do diretório" << endl;
+        return;
+    }
+    closedir(dir);
+}
 void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 {
 	pthread_mutex_lock(&m);
@@ -179,6 +204,14 @@ void listenClient(int userId, int clientSocket)
 			cout << buffer << endl;
 			sendFile(userId, fileName, clientSocket);
 		}
+		if(strcmp(buffer, "delete") == 0){
+			char fileName[10000];
+			int ifileSize;
+			bytes = read(clientSocket, buffer, 10000);
+			strcpy(fileName, buffer);
+		
+			deleteFile(userId, clientSocket, fileName);
+		}
 		memset(buffer,0,10000);
 		bytes = read(clientSocket, buffer, 10000);
 	}
@@ -279,6 +312,8 @@ void sendAllFiles(int userId, int syncSocket)
     cout << "finished send all files" << endl;
 }
 
+
+
 void listenSync(int userId, int clientSocket)
 {
 	int bytes;
@@ -311,6 +346,7 @@ void listenSync(int userId, int clientSocket)
 			cout << "user Id = " << userId << endl;
             sendAllFiles(userId, clientSocket);
         }
+		
         memset(buffer,0,10000);
 		bytes = read(clientSocket, buffer, 10000);
 	}
