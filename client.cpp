@@ -12,7 +12,7 @@
 #include <string>
 #include <fstream>
 #include <errno.h>
-#include <sys/inotify.h>
+//#include <sys/inotify.h>
 #include <cstdio>
 #include <dirent.h>
 #include <ctime>
@@ -39,6 +39,7 @@ using namespace std;
 
 string dirName;
 int sockfd;
+int gsynckSock;
 struct sockaddr_in serv_addr;
 struct hostent *server;
 string userId;
@@ -74,6 +75,33 @@ int sendMessage(std::string message){
 			// cout << buffer << endl;
 			// cout << "Bytes enviados: " << bytes << endl;
 	return bytes;
+}
+
+int connectSocket(){
+	if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0){
+		printf("ERROR connecting\n");
+		return -1;
+	}
+	int service = 1;
+
+	sendMessage(to_string(service));
+
+	sendMessage(userId);
+
+	char buffer[10000];
+	int bytes = read(sockfd, buffer,10000);
+/*
+			int devicesConnected = 0;
+			bytes = read(sockfd, &devicesConnected, sizeof(int));
+			if(bytes < 0){
+				cout << "error on connecting" << endl;
+			}
+			if(devicesConnected == 2){
+				cout << "Max devices conneted" << endl;
+				return -1;
+
+			}*/
+	return 1;
 }
 
 int sendMessageSync(std::string message, int sync_sock){
@@ -119,43 +147,21 @@ void listClient(){
 		std::cout << "Erro na abertura do diretório\n" << std::endl;
 	}
 }
-int connectSocket(){
-	if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0){
-		printf("ERROR connecting\n");
-		return -1;
-	}
-	int service = 1;
 
-	sendMessage(to_string(service));
-
-	sendMessage(userId);
-
-	char buffer[10000];
-	int bytes = read(sockfd, buffer,10000);
-/*
-			int devicesConnected = 0;
-			bytes = read(sockfd, &devicesConnected, sizeof(int));
-			if(bytes < 0){
-				cout << "error on connecting" << endl;
-			}
-			if(devicesConnected == 2){
-				cout << "Max devices conneted" << endl;
-				return -1;
-
-			}*/
-	return 1;
-}
 
 void sync_dir_onConnect(){
 	string dirName = "sync_dir_";
 
 }
 void closeSocket(){
-
-	close(sockfd);
 	sendMessage("exit");
+	sendMessageSync("exit",gsynckSock);
+	close(sockfd);
+	close(gsynckSock);
+	
 }
 void closeSyncSocket(int sync_sock){
+	cout << "sync sock closed" << endl;
     close(sync_sock);
 }
 
@@ -471,10 +477,10 @@ int sync_socket(){
 
 void inotifyInit(){
 
-	fd = inotify_init();
-	wd = inotify_add_watch( fd, dirName.c_str(), IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
+	// fd = inotify_init();
+	// wd = inotify_add_watch( fd, dirName.c_str(), IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
 
-	cout << dirName << endl;
+	// cout << dirName << endl;
 }
 
 void listenServer(int sync_sock){
@@ -502,56 +508,56 @@ void *sync_thread(void *socket){
 
     //listenServer(*socketAdress);
 
-	int length, i = 0;
-	char buffer[EVENT_BUF_LEN];
-	char path[200];
+	// int length, i = 0;
+	// char buffer[EVENT_BUF_LEN];
+	// char path[200];
 
-	while(1){
-
-
-		length = read( fd, buffer, EVENT_BUF_LEN );
+	// while(1){
 
 
-		if ( length < 0 ) {
-			perror( "read" );
-		}
+	// 	length = read( fd, buffer, EVENT_BUF_LEN );
 
 
-		while ( i < length ) {
-			struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];
-			if ( event->len ) {
-				if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
-
-					strcpy(path, dirName.c_str());
-					strcat(path, "/");
-					strcat(path, event->name);
+	// 	if ( length < 0 ) {
+	// 		perror( "read" );
+	// 	}
 
 
-					if(exists(path) && (event->name[0] != '.')){
-						char fpath[256] = "sync_dir_";
-						strcat(fpath, userId.c_str());
-						strcat(fpath, "/");
-						strcat(fpath, event->name);
-						sendFile(fpath);
-						cout << "Send File" << endl;
-					}
-				}
-				else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
-					if(event->name[0] != '.')
-					{
-						//sendMessage("deleteFile")
-						cout << "Delete File" << endl;
-					}
-				}
-			}
-			i += EVENT_SIZE + event->len;
-		}
-		i = 0;
-		sleep(5);
-	}
+	// 	while ( i < length ) {
+	// 		struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];
+	// 		if ( event->len ) {
+	// 			if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
 
-	inotify_rm_watch( fd, wd );
-	close( fd );
+	// 				strcpy(path, dirName.c_str());
+	// 				strcat(path, "/");
+	// 				strcat(path, event->name);
+
+
+	// 				if(exists(path) && (event->name[0] != '.')){
+	// 					char fpath[256] = "sync_dir_";
+	// 					strcat(fpath, userId.c_str());
+	// 					strcat(fpath, "/");
+	// 					strcat(fpath, event->name);
+	// 					sendFile(fpath);
+	// 					cout << "Send File" << endl;
+	// 				}
+	// 			}
+	// 			else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
+	// 				if(event->name[0] != '.')
+	// 				{
+	// 					//sendMessage("deleteFile")
+	// 					cout << "Delete File" << endl;
+	// 				}
+	// 			}
+	// 		}
+	// 		i += EVENT_SIZE + event->len;
+	// 	}
+	// 	i = 0;
+	// 	sleep(5);
+	// }
+
+	// inotify_rm_watch( fd, wd );
+	// close( fd );
 
 
 }
@@ -611,7 +617,8 @@ void sync_client(){
     char buffer[10000];
     bytes = read(sync_sock, buffer,10000); //Socket confirm
 
-
+	
+	gsynckSock = sync_sock;
 
 
 

@@ -11,12 +11,15 @@
 #include <fstream>
 #include <dirent.h>
 #include <experimental/filesystem>
+#include <map>
+#include <set> 
 
 using namespace std;
 
 #define PORT 4000
 
-
+map<int,int > mSockToUserId;
+map<int,set<int> > mUserIdToSocks;
 
 char buffer[10000];
 void openSocket()
@@ -37,11 +40,6 @@ void initClient(int userId, int clientSocket)
 	}
 }
 
-void closeSocket(int userId, int socket){
-	//close(sync_sock);
-	close(socket);
-	cout << "Conexão com " << userId << " encerrada!" << endl;
-}
 
 int getFileSize(string filepath){
         ifstream in(filepath, std::ifstream::ate | std::ifstream::binary);
@@ -53,6 +51,15 @@ void sendMessage(std::string message, int clientSocket){
 
 			int bytes = write(clientSocket , buffer , 10000*sizeof(char));
 		}
+
+void closeSocket(int userId){
+	//close(sync_sock);
+	for(auto x:mUserIdToSocks[userId]){
+		sendMessage("exit",x);
+		close(x);
+	}
+	cout << "All sockets closed" << endl;
+}
 void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 {
 	ofstream file;
@@ -165,7 +172,7 @@ void listenClient(int userId, int clientSocket)
 		memset(buffer,0,10000);
 		bytes = read(clientSocket, buffer, 10000);
 	}
-	//closeSocket(userId);
+	closeSocket(userId);
 }
 
 void *startClientThread(void *socketAd)
@@ -182,6 +189,8 @@ void *startClientThread(void *socketAd)
 	char isConnected = 'Y';
 	// Informa ao usuário que conseguiu conectar ao server
 
+	mSockToUserId[*socket] = userId;
+	mUserIdToSocks[userId].insert(*socket);
 
 	sendMessage("Y",*socket);
 	initClient(userId, *socket);
@@ -307,6 +316,8 @@ void *startSyncThread(void *socket)
 	userId = atoi(buffer);
 	if (userId < 0)
 		cout << "Erro ao ler do socket" << endl;
+
+	mUserIdToSocks[userId].insert(*socketAdress);
 
 	char isConnected = 'Y';
 	// Informa ao usuário que conseguiu conectar ao server
