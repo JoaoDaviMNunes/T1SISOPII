@@ -243,7 +243,7 @@ void downloadFile(string fileName){ //TODO
 	if (fileSize > 0){
 		while (fileSize > 0)
 		{
-			bytes = read(sockfd, buffer, min(fileSize,10000));
+			bytes = read(sockfd, buffer, 10000);
 			cout << buffer << endl;
 			file.write(buffer, min(fileSize, 10000));
 

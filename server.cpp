@@ -303,7 +303,7 @@ void listenSync(int userId, int clientSocket)
         memset(buffer,0,10000);
 		bytes = read(clientSocket, buffer, 10000);
 	}
-	sendMessage("exit",clientSocket);
+	//sendMessage("exit",clientSocket);
 }
 void *startSyncThread(void *socket)
 {
@@ -387,7 +387,6 @@ if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 			}
 		}
 	}
-	close(clientSockfd);
-	close(sockfd);
+
 	return 0;
 }
