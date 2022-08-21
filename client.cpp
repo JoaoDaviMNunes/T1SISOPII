@@ -659,7 +659,11 @@ void *sync_thread_propagate(void *socket){
 			pthread_mutex_unlock(&m2);
 		}
 		if(strcmp(buffer,"delete") == 0){
-
+			pthread_mutex_lock(&m2);
+			cout << "deleted" << endl;
+			deleteAllFiles();
+			download_all_files(gsynckSock);
+			pthread_mutex_unlock(&m2);
 		}
 		memset(buffer,0,10000);
 		bytes = read(*socketAdress, buffer, 10000);

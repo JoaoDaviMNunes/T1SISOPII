@@ -20,6 +20,7 @@ using namespace std;
 
 map<int,int > mSockToUserId;
 map<int,set<int> > mUserIdToSocks;
+map<int,int> mUserPropSock;
 
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 
@@ -209,7 +210,7 @@ void listenClient(int userId, int clientSocket)
 			int ifileSize;
 			bytes = read(clientSocket, buffer, 10000);
 			strcpy(fileName, buffer);
-		
+			sendMessage("delete",mUserPropSock[userId]);
 			deleteFile(userId, clientSocket, fileName);
 		}
 		memset(buffer,0,10000);
@@ -393,6 +394,7 @@ void *startPropagateThread(void *socket)
 		cout << "Erro ao ler do socket" << endl;
 
 	mUserIdToSocks[userId].insert(*socketAdress);
+	mUserPropSock[userId] = *socketAdress;
 
 	char isConnected = 'Y';
 	// Informa ao usuário que conseguiu conectar ao server
@@ -466,6 +468,7 @@ if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 			else if (typeOfService == 3)
 			{ // Sincronização com cliente
 				cout << "Start Propagate Thread" << endl;
+			
 				if (pthread_create(&propThread, NULL, startPropagateThread, &clientSockfd))
 				{
 					cout << "Erro ao abrir a thread do cliente" << endl;
