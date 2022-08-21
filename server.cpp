@@ -17,6 +17,7 @@
 using namespace std;
 
 #define PORT 4000
+#define ALOC_SIZE 10000
 
 map<int,int > mSockToUserId;
 map<int,set<int> > mUserIdToSocks;
@@ -27,7 +28,7 @@ pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 
 bool hasNewFile = false;
 
-char buffer[10000];
+char buffer[ALOC_SIZE];
 
 typedef struct stPropagate{
 	int userId;
@@ -58,10 +59,10 @@ int getFileSize(string filepath){
     		return in.tellg();
 		}
 void sendMessage(std::string message, int clientSocket){
-			char buffer[10000];
+			char buffer[ALOC_SIZE];
 			strcpy(buffer,message.c_str());
 
-			int bytes = write(clientSocket , buffer , 10000*sizeof(char));
+			int bytes = write(clientSocket , buffer , ALOC_SIZE);
 		}
 
 void closeSocket(int userId){
@@ -105,20 +106,20 @@ void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 	string dir = to_string(userId) + "/" + fileName;
 	file.open(dir);
 	int bytes;
-	char buffer[10000];
+	char buffer[ALOC_SIZE];
 	 cout << dir << " " << fileName << endl << fileSize << endl;
 	if (fileSize > 0)
 	{
 
 		while (fileSize > 0)
 		{
-			bytes = read(clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer,  min(ALOC_SIZE, fileSize));
 			//cout << buffer << endl;
-			//file.write(buffer, min(fileSize, 10000)); Certo
-			file.write(buffer, min(10000,fileSize));
+			//file.write(buffer, min(fileSize, ALOC_SIZE)); Certo
+			file.write(buffer, min(ALOC_SIZE,fileSize));
 
 
-			fileSize -= 10000;
+			fileSize -= ALOC_SIZE;
 		}
 	}
 	file.close();
@@ -128,7 +129,7 @@ void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 
 void sendFile(int userId,string filepath, int clientSocket)
 {
-	pthread_mutex_lock(&m);
+	//pthread_mutex_lock(&m);
 	FILE *file;
 	int fileSize;
 	int bytes;
@@ -151,32 +152,38 @@ void sendFile(int userId,string filepath, int clientSocket)
 		cout << filepath << endl;
 		cout << fileSize << endl;
 
-		char data[10000];
+		char data[ALOC_SIZE];
 		while (!feof(file))
 		{
-			fread(data, sizeof(data), 1, file);
+			fread(data, min(ALOC_SIZE, fileSize), 1, file);
 
-			bytes = write(clientSocket, data, 10000);
+			bytes = write(clientSocket, data, min(ALOC_SIZE, fileSize));
+
+			cout << data << endl;
 			if (bytes < 0)
 				cout << "erro ao enviar arquivo" << endl;
-			fileSize -= 10000;
+			fileSize -= ALOC_SIZE;
+
+			if( fileSize <= 0){
+				break;
+			}
 		}
 		fclose(file);
 	}else{
 
 		sendMessage("erro",clientSocket);
 	}
-	pthread_mutex_unlock(&m);
+	//pthread_mutex_unlock(&m);
 }
 
 void listenClient(int userId, int clientSocket)
 {
 	cout << "listen client" << endl;
 	int bytes;
-	char buffer[10000];
+	char buffer[ALOC_SIZE];
 	char confirm[10] = "ok";
 
-	bytes = read(clientSocket, buffer, 10000);
+	bytes = read(clientSocket, buffer, ALOC_SIZE);
 	cout << "ListenClient: " << buffer << endl;
 
 	//cout << buffer << endl;
@@ -187,15 +194,15 @@ void listenClient(int userId, int clientSocket)
 	{
 		if (strcmp(buffer, "upload") == 0)
 		{
-			char fileName[10000];
-			char fileSize[10000];
+			char fileName[ALOC_SIZE];
+			char fileSize[ALOC_SIZE];
 			int ifileSize;
 			cout << "waiting " << endl;
-			bytes = read(clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer, ALOC_SIZE);
 			strcpy(fileName, buffer);
 			cout << "Filename upload: " << buffer << endl;
 			// send(*clientSocket,confirm,sizeof(confirm),0);
-			bytes = read(clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer, ALOC_SIZE);
 			// cout << buffer << endl;
 			strcpy(fileSize, buffer);
 			ifileSize = atoi(fileSize);
@@ -207,25 +214,25 @@ void listenClient(int userId, int clientSocket)
 		if (strcmp(buffer, "download") == 0)
 		{
 			cout << "here" << endl;
-			char fileName[10000];
+			char fileName[ALOC_SIZE];
 			// cout << buffer << endl;
-			bytes = read(clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer, ALOC_SIZE);
 			strcpy(fileName, buffer);
 			cout << buffer << endl;
 			sendFile(userId, fileName, clientSocket);
 		}
 		if(strcmp(buffer, "delete") == 0){
-			char fileName[10000];
+			char fileName[ALOC_SIZE];
 			int ifileSize;
-			bytes = read(clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer, ALOC_SIZE);
 			strcpy(fileName, buffer);
 			for(auto x: mSocketPropagate[userId]){
 				sendMessage("delete",x);
 			}
 			deleteFile(userId, clientSocket, fileName);
 		}
-		memset(buffer,0,10000);
-		bytes = read(clientSocket, buffer, 10000);
+		memset(buffer,0,ALOC_SIZE);
+		bytes = read(clientSocket, buffer, ALOC_SIZE);
 	}
 	closeSocket(userId);
 }
@@ -235,9 +242,9 @@ void *startClientThread(void *socketAd)
     int *socket = (int *)socketAd;
 	int bytes;
 	int userId;
-	char buffer[10000];
+	char buffer[ALOC_SIZE];
 	// Le userId
-	bytes = read(*socket, buffer, 10000);
+	bytes = read(*socket, buffer, ALOC_SIZE);
 	userId = atoi(buffer);
 	if(bytes < 0)
 		cout << "erro ao ler userID" << endl;
@@ -285,6 +292,7 @@ int countFiles(string dirName)
 
 void sendAllFiles(int userId, int syncSocket)
 {
+	pthread_mutex_lock(&m);
 	cout << to_string(userId) + "/" << endl;
 
     sendMessage(to_string(countFiles(to_string(userId) + "/")),syncSocket);
@@ -322,6 +330,7 @@ void sendAllFiles(int userId, int syncSocket)
                   << std::endl;
     }
     cout << "finished send all files" << endl;
+	pthread_mutex_unlock(&m);
 }
 
 
@@ -329,9 +338,9 @@ void sendAllFiles(int userId, int syncSocket)
 void listenSync(int userId, int clientSocket)
 {
 	int bytes;
-	char buffer[10000];
+	char buffer[ALOC_SIZE];
 
-	bytes = read(clientSocket, buffer, 10000);
+	bytes = read(clientSocket, buffer, ALOC_SIZE);
 	cout << "ListenSync: " << buffer << endl;
 	if (bytes < 0)
 		cout << "erro ao ler requisicao do cliente" << endl;
@@ -340,13 +349,13 @@ void listenSync(int userId, int clientSocket)
 	{
 		if (strcmp(buffer, "upload") == 0)
 		{
-			char fileName[10000];
-			char fileSize[10000];
+			char fileName[ALOC_SIZE];
+			char fileSize[ALOC_SIZE];
 			int ifileSize;
-			bytes = read(clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer, ALOC_SIZE);
 			strcpy(fileName, buffer);
 			// send(*clientSocket,confirm,sizeof(confirm),0);
-			bytes = read(clientSocket, buffer, 10000);
+			bytes = read(clientSocket, buffer, ALOC_SIZE);
 			strcpy(fileSize, buffer);
 			ifileSize = atoi(fileSize);
 			receiveFile(userId, fileName, ifileSize, clientSocket);
@@ -359,8 +368,8 @@ void listenSync(int userId, int clientSocket)
             sendAllFiles(userId, clientSocket);
         }
 		
-        memset(buffer,0,10000);
-		bytes = read(clientSocket, buffer, 10000);
+        memset(buffer,0,ALOC_SIZE);
+		bytes = read(clientSocket, buffer, ALOC_SIZE);
 	}
 	//sendMessage("exit",clientSocket);
 }
@@ -369,9 +378,9 @@ void *startSyncThread(void *socket)
 	int *socketAdress = (int *)socket;
 	int bytes;
 	int userId;
-	char buffer[10000];
+	char buffer[ALOC_SIZE];
 	// Le userId
-	bytes = read(*socketAdress, buffer, 10000);
+	bytes = read(*socketAdress, buffer, ALOC_SIZE);
 	userId = atoi(buffer);
 	if (userId < 0)
 		cout << "Erro ao ler do socket" << endl;
@@ -397,9 +406,9 @@ void *startPropagateThread(void *socket)
 
 	int bytes;
 	int userId;
-	char buffer[10000];
+	char buffer[ALOC_SIZE];
 	// Le userId
-	bytes = read(*socketAdress, buffer, 10000);
+	bytes = read(*socketAdress, buffer, ALOC_SIZE);
 	userId = atoi(buffer);
 	if (userId < 0)
 		cout << "Erro ao ler do socket" << endl;
@@ -452,12 +461,12 @@ if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 		}
 		else
 		{
-			bzero(buffer, 10000);
+			bzero(buffer, ALOC_SIZE);
 
 			int typeOfService;
 			/* read from the socket */
-			char buffer[10000];
-			read(clientSockfd, buffer, 10000);
+			char buffer[ALOC_SIZE];
+			read(clientSockfd, buffer, ALOC_SIZE);
 			typeOfService = atoi(buffer);
 			if (typeOfService < 0)
 				cout << "Erro ao ler do socket" << endl;
