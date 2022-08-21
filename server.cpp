@@ -21,12 +21,19 @@ using namespace std;
 map<int,int > mSockToUserId;
 map<int,set<int> > mUserIdToSocks;
 map<int,int> mUserPropSock;
+map<int,set<int> > mSocketPropagate;
 
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 
 bool hasNewFile = false;
 
 char buffer[10000];
+
+typedef struct stPropagate{
+	int userId;
+	int *socket;
+} STPROPAGATE;
+
 void openSocket()
 {
 
@@ -106,7 +113,7 @@ void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 		while (fileSize > 0)
 		{
 			bytes = read(clientSocket, buffer, 10000);
-			cout << buffer << endl;
+			//cout << buffer << endl;
 			//file.write(buffer, min(fileSize, 10000)); Certo
 			file.write(buffer, min(10000,fileSize));
 
@@ -121,6 +128,7 @@ void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 
 void sendFile(int userId,string filepath, int clientSocket)
 {
+	pthread_mutex_lock(&m);
 	FILE *file;
 	int fileSize;
 	int bytes;
@@ -158,6 +166,7 @@ void sendFile(int userId,string filepath, int clientSocket)
 
 		sendMessage("erro",clientSocket);
 	}
+	pthread_mutex_unlock(&m);
 }
 
 void listenClient(int userId, int clientSocket)
@@ -210,7 +219,9 @@ void listenClient(int userId, int clientSocket)
 			int ifileSize;
 			bytes = read(clientSocket, buffer, 10000);
 			strcpy(fileName, buffer);
-			sendMessage("delete",mUserPropSock[userId]);
+			for(auto x: mSocketPropagate[userId]){
+				sendMessage("delete",x);
+			}
 			deleteFile(userId, clientSocket, fileName);
 		}
 		memset(buffer,0,10000);
@@ -395,7 +406,7 @@ void *startPropagateThread(void *socket)
 
 	mUserIdToSocks[userId].insert(*socketAdress);
 	mUserPropSock[userId] = *socketAdress;
-
+	mSocketPropagate[userId].insert(*socketAdress);
 	char isConnected = 'Y';
 	// Informa ao usuário que conseguiu conectar ao server
 
@@ -403,9 +414,11 @@ void *startPropagateThread(void *socket)
 	// Le userId
 	while(true){
 		if(hasNewFile){
-			cout << "propagate" << endl;
-			hasNewFile = false;
-			sendMessage("propagate",*socketAdress);
+			for(auto x:mSocketPropagate[userId]){
+				cout << "propagate" << endl;
+				hasNewFile = false;
+				sendMessage("propagate",x);
+			}			
 		}
 	}
 }

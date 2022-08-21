@@ -206,7 +206,7 @@ void sendFile(string filepath){
 		char data[10000];
 		while(!feof(file)){
 			fread(data, 10000, 1, file);
-			cout << data << endl;
+			//cout << data << endl;
 
 			bytes = write(sockfd, data,10000);
 			if(bytes < 0){
@@ -250,7 +250,7 @@ void downloadFile(string fileName){ //TODO
 		while (fileSize > 0)
 		{
 			bytes = read(sockfd, buffer, 10000);
-			cout << buffer << endl;
+			//cout << buffer << endl;
 			file.write(buffer, min(fileSize, 10000));
 
 
@@ -299,7 +299,7 @@ void download_all_files(int sync_sock){
 
             while(fileSize > 0){
                 bytes = read(sync_sock,buffer,BUFSIZE); //conteudo do arquivo
-				cout << "conteudo: " << buffer << endl;
+				//cout << "conteudo: " << buffer << endl;
                 fwrite(buffer,min(BUFSIZE,fileSize),1,file);
                 fileSize -= BUFSIZE;
             }
