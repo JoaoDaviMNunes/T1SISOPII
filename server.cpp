@@ -113,7 +113,7 @@ void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 
 		while (fileSize > 0)
 		{
-			bytes = read(clientSocket, buffer,  min(ALOC_SIZE, fileSize));
+			bytes = read(clientSocket, buffer,ALOC_SIZE);
 			//cout << buffer << endl;
 			//file.write(buffer, min(fileSize, ALOC_SIZE)); Certo
 			file.write(buffer, min(ALOC_SIZE,fileSize));
@@ -157,9 +157,9 @@ void sendFile(int userId,string filepath, int clientSocket)
 		{
 			fread(data, min(ALOC_SIZE, fileSize), 1, file);
 
-			bytes = write(clientSocket, data, min(ALOC_SIZE, fileSize));
+			bytes = write(clientSocket, data, ALOC_SIZE);
 
-			cout << data << endl;
+			// cout << data << endl;
 			if (bytes < 0)
 				cout << "erro ao enviar arquivo" << endl;
 			fileSize -= ALOC_SIZE;
@@ -226,10 +226,10 @@ void listenClient(int userId, int clientSocket)
 			int ifileSize;
 			bytes = read(clientSocket, buffer, ALOC_SIZE);
 			strcpy(fileName, buffer);
+			deleteFile(userId, clientSocket, fileName);
 			for(auto x: mSocketPropagate[userId]){
 				sendMessage("delete",x);
 			}
-			deleteFile(userId, clientSocket, fileName);
 		}
 		memset(buffer,0,ALOC_SIZE);
 		bytes = read(clientSocket, buffer, ALOC_SIZE);
