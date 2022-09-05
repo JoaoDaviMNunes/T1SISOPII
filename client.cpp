@@ -26,16 +26,17 @@
 int fd;
 int wd;
 
-
+//variáveis para seção crítica
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t m2 = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t m3 = PTHREAD_MUTEX_INITIALIZER;
 
+//variáveis globais
 #define PROPAGATESERVICE 3
 #define SYNCSERVICE 2
 #define REQUESTSERVICE 1
 #define PORT 4000
-#define ALOC_SIZE 10000
+#define ALOC_SIZE 512
 
 using namespace std;
 
@@ -77,8 +78,7 @@ int sendMessage(std::string message){
 	strcpy(buffer,message.c_str());
 
 	int bytes = write(sockfd , buffer , ALOC_SIZE);
-			// cout << buffer << endl;
-			// cout << "Bytes enviados: " << bytes << endl;
+
 	return bytes;
 }
 
@@ -95,17 +95,7 @@ int connectSocket(){
 
 	char buffer[ALOC_SIZE];
 	int bytes = read(sockfd, buffer,ALOC_SIZE);
-/*
-			int devicesConnected = 0;
-			bytes = read(sockfd, &devicesConnected, sizeof(int));
-			if(bytes < 0){
-				cout << "error on connecting" << endl;
-			}
-			if(devicesConnected == 2){
-				cout << "Max devices conneted" << endl;
-				return -1;
 
-			}*/
 	return 1;
 }
 
@@ -114,8 +104,7 @@ int sendMessageSync(std::string message, int sync_sock){
 	strcpy(buffer,message.c_str());
 
 	int bytes = write(sync_sock , buffer , ALOC_SIZE);
-			// cout << buffer << endl;
-			// cout << "Bytes enviados: " << bytes << endl;
+
 	return bytes;
 }
 
@@ -145,7 +134,6 @@ void listClient(){
 				"  Creation Time: " << 4+ctime(&info.st_ctime) << std::endl;
 			}
 		}
-		//fflush(stdout);
 		closedir(dir);
 	}
 	else{
@@ -154,10 +142,6 @@ void listClient(){
 }
 
 
-void sync_dir_onConnect(){
-	string dirName = "sync_dir_";
-
-}
 void closeSocket(){
 	sendMessage("exit");
 	sendMessageSync("exit",gsynckSock);
@@ -165,7 +149,7 @@ void closeSocket(){
 	close(sockfd);
 	close(gsynckSock);
 	close(gpropSock);
-	
+
 }
 void closeSyncSocket(int sync_sock){
 	cout << "sync sock closed" << endl;
@@ -186,13 +170,15 @@ int getFileSize(string filepath){
 
 void sendFile(string filepath){
 	pthread_mutex_lock(&m2);
+
 	FILE *file;
 	int fileSize;
 	int bytes;
 	string filename;
 	char ch = '/';
 
-	if((file = fopen(filepath.c_str(),"rb"))){
+
+    if((file = fopen(filepath.c_str(),"rb"))){
 				//envia requisição de envio para o servidor
 		fileSize = getFileSize(filepath);
 		if(sendMessage("upload") < 0){
@@ -204,29 +190,28 @@ void sendFile(string filepath){
 		sendMessage(filename);
 		cout << "sending: " << filename << endl;
 
-				//waitConfirm();
 		sendMessage(to_string(fileSize));
-		char data[ALOC_SIZE];
-		while(!feof(file)){
-			fread(data, min(ALOC_SIZE, fileSize), 1, file);
-			cout << data << endl;
 
-			bytes = write(sockfd, data, ALOC_SIZE);
-			if(bytes < 0){
-				cout << "erro ao enviar arquivo" << endl;
+		char data[ALOC_SIZE];
+		bzero(data, ALOC_SIZE);
+
+		int length = 0;
+      //Each time a piece of data is read, it is sent to the client and looped until the file is finished
+        while((length = fread(data, sizeof(char), ALOC_SIZE, file)) > 0){
+            if(send(sockfd, data, length, 0) < 0)
+        {
+                cout << "Send File: " << filename << " Failed." << endl;
                 break;
-            }
-			fileSize -= ALOC_SIZE;
-			if(fileSize <= 0){
-				break;
-			}
-		}
+        }
+            bzero(data, ALOC_SIZE);
+        }
 
 		fclose(file);
 	}
 	else{
 		cout << "erro ao abrir o arquivo" << endl;
 	}
+
 	pthread_mutex_unlock(&m2);
 }
 
@@ -236,55 +221,61 @@ void downloadFile(string fileName){ //TODO
 	sendMessage(fileName);
 
 	ofstream file;
-	//string dir = "sync_dir_" + userId + "/" + fileName;
 	file.open(fileName);
 	int bytes;
 	char buffer[ALOC_SIZE];
+
+
 	int fileSize;
 	bytes = read(sockfd,buffer,ALOC_SIZE);
 	if(strcmp(buffer,"erro") == 0){
 		cout << "erro ao baixar arquivo do servidor";
 		return;
 	}
+
 	fileSize = atoi(buffer);
 	cout << fileName << endl << fileSize << endl;
+
+	bzero(buffer, ALOC_SIZE);
 	if (fileSize > 0){
 		while (fileSize > 0)
 		{
-			bytes = read(sockfd, buffer, ALOC_SIZE);
-			//cout << buffer << endl;
-			file.write(buffer, ALOC_SIZE);
+			bytes = recv(sockfd, buffer, min(fileSize, ALOC_SIZE), MSG_WAITALL);
+			file.write(buffer, bytes);
 
-
-			fileSize -= ALOC_SIZE;
+			fileSize -= bytes;
+            bzero(buffer, ALOC_SIZE);
 		}
 	}
 	file.close();
 }
 
 void download_all_files(int sync_sock){
+	//seção crítica entre downloadall e sendfile
 	pthread_mutex_lock(&m2);
-    cout << "try to download all files" << endl;
+    
     string command = "DOWNLOADALLFILES";
-    char buffer[ALOC_SIZE];	
-    int bytes = sendMessageSync(command,sync_sock);
+    char buffer[ALOC_SIZE];
+    bzero(buffer,ALOC_SIZE);
+
+    int bytes = sendMessageSync(command, sync_sock);
+
     if(bytes < 0){
         cout << "error while downloading all files" << endl;
         return;
     }
-    int qtFiles;
-    bytes = read(sync_sock, buffer, ALOC_SIZE);
 
+    int qtFiles;
+    bytes = recv(sync_sock, buffer, ALOC_SIZE, MSG_WAITALL);
     qtFiles = atoi(buffer);
-    cout << "qtFiles: " << qtFiles << endl;
+
     string fileName;
+    bzero(buffer, ALOC_SIZE);
     for(int i=0;i<qtFiles;i++){
-		
-		cout << "Arquivo no: " << i << endl;
+
         //Le nome do arquivo
         bytes = read(sync_sock,buffer,ALOC_SIZE);
         fileName = buffer;
-        //cout << "Filename: " << fileName << endl;
         if(bytes < 0){
             cout << "error downloading files" << endl;
         }
@@ -293,27 +284,24 @@ void download_all_files(int sync_sock){
         string dirFile = "sync_dir_" + userId + "/" + fileName;
         file = fopen(dirFile.c_str(),"wb");
         int fileSize;
+
         bytes = read(sync_sock, buffer, ALOC_SIZE);
-
         fileSize = atoi(buffer);
-        //cout << "Filesize: " << fileSize << endl;
-        
-        if(fileSize > 0){
-			
+        bzero(buffer, ALOC_SIZE);
 
+        if(fileSize > 0){
             while(fileSize > 0){
+
+                bytes = recv(sync_sock, buffer, min(fileSize, ALOC_SIZE), MSG_WAITALL); //conteudo do arquivo
 				
-                bytes = read(sync_sock, buffer, ALOC_SIZE); //conteudo do arquivo
-				cout << "conteudo: " << buffer << endl;
-                fwrite(buffer, min(ALOC_SIZE,fileSize),1,file);
-                fileSize -= ALOC_SIZE;
+                fwrite(buffer, 1, bytes,file);
+                fileSize -= bytes;
+                bzero(buffer, ALOC_SIZE);
             }
 
         }
-        memset(buffer,0,ALOC_SIZE);
         fclose(file);
     }
-    cout << "finished download all files" << endl;
 	pthread_mutex_unlock(&m2);
 }
 
@@ -347,7 +335,6 @@ void deleteAllFiles(){
     DIR *dir;
     struct dirent *dent;
     dir = opendir((const char *) dirName.c_str());
-    // dir = opendir((const char *) dirName);
 
     string path, filename;
     int count = 0; // Contador de arquivos apagados, pra bonito
@@ -368,14 +355,12 @@ void deleteAllFiles(){
                 }
             }
         }
-        cout << "> Operacao finalizada: " << count << " arquivos deletados." << endl;
         return;
     }
     else{
         cout << "Erro na abertura do diret贸rio!" << endl;
         return;
     }
-    //fflush(stdout);
     closedir(dir);
 }
 
@@ -449,57 +434,13 @@ void interface(){
 		else{
 			cout << "ERRO, comando inválido\nPor favor, digite novamente: \n";
 		}
-		fflush(stdout);
 	}while(request != "exit");
-}
-
-int sync_socket(){
-/*
-	struct sockaddr_in serv_addr_sync;
-	struct hostent *server_sync;
-
-	server_sync = gethostbyname(hostname);
-
-    int service = SYNCSERVICE;
-    int bytes;
-
-    if(server_sync == NULL){
-        cout << "erro ao criar sync socket 1 " << endl;
-        return -1;
-    }
-    if((sync_sock = socket(AF_INET, SOCK_STREAM, 0)) == -1){
-        cout << "erro ao criar sync socket 2 " << endl;
-        return -1;
-    }
-
-    serv_addr_sync.sin_family = AF_INET;
-    serv_addr_sync.sin_port = htons(PORT);
-    serv_addr_sync.sin_addr = *((struct in_addr *)server_sync->h_addr);
-
-    bzero(&(serv_addr_sync.sin_zero), 8);
-
-    if (connect(sync_sock,(struct sockaddr *) &serv_addr_sync,sizeof(serv_addr_sync)) < 0){
-        cout << "erro ao conectar sync_sock" << endl;
-        return -1;
-    }
-
-    bytes = sendMessageSync(to_string(SYNCSERVICE));
-    if(bytes < 0){
-        cout << "erro ao conectar sync thread" << endl;
-    }
-    bytes = sendMessageSync(userId);
-
-    char buffer[ALOC_SIZE];
-    bytes = read(sync_sock, buffer,ALOC_SIZE); //Socket confirm
-    */
 }
 
 void inotifyInit(){
 
 	fd = inotify_init();
 	wd = inotify_add_watch( fd, dirName.c_str(), IN_CREATE | IN_CLOSE_WRITE | IN_MOVED_TO | IN_DELETE | IN_MOVED_FROM );
-
-	// cout << dirName << endl;
 }
 
 void listenServer(int sync_sock){
@@ -517,22 +458,11 @@ void *sync_thread(void *socket){
 	//https://www.thegeekstuff.com/2010/04/inotify-c-program-example/
 
     int *socketAdress = (int *)socket;
-	//sync_socket(*socket);
-
-	// deleteAllFiles();
-	// cout << "Arquivos deletados" << endl;
-
-	// download_all_files(*socketAdress);
-    // cout << "Downloaded all files" << endl;
-	// pthread_mutex_unlock(&m); //Lock é dado antes de criar a thread, no método sync_client
-
 
 	int length, i = 0;
 	char buffer[EVENT_BUF_LEN];
 	char path[200];
-
 	while(1){
-
 
 		length = read( fd, buffer, EVENT_BUF_LEN );
 
@@ -542,16 +472,19 @@ void *sync_thread(void *socket){
 		}
 
 		if(deletedAllFiles){
+            pthread_mutex_lock(&m3);
 
 			deletedAllFiles = false;
 			i = length;
+
+            pthread_mutex_unlock(&m3);
 		}
 
 		while ( i < length ) {
 			struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];
-			
+
 			if ( event->len ) {
-				
+
 				if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
 
 					strcpy(path, dirName.c_str());
@@ -564,8 +497,7 @@ void *sync_thread(void *socket){
 						strcat(fpath, userId.c_str());
 						strcat(fpath, "/");
 						strcat(fpath, event->name);
-						sendFile(fpath);
-						cout << "1 Send File" << fpath << endl;
+						sendFile(fpath);						
 					}
 				}
 				else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
@@ -573,26 +505,21 @@ void *sync_thread(void *socket){
 					{
 						string filename = event->name;
 						char ch = '/';
-						//strcat(fpath, event->name);
+
 						filename = filename.substr(filename.find_last_of(ch) + 1 ,filename.length()- filename.find(ch));
-						
-						//cout << "Excluindo: " << fpath << endl;
-						sendDeleteFile(filename);
-						cout << "2 Delete File :" << filename << endl;
+						sendDeleteFile(filename);						
 					}
 				}
 			}
-			
+
 			i += EVENT_SIZE + event->len;
 		}
-		i = 0;
-		sleep(4);
+		i = 0;           
+		sleep(5);
 	}
 
 	inotify_rm_watch( fd, wd );
 	close( fd );
-
-
 }
 
 void sync_client(){
@@ -609,10 +536,8 @@ void sync_client(){
 		cout << "sync_dir_"+userId << " created" << endl;
 	}
 
-
-
     int sync_sock;
-	//AQUI TA CABREIRO
+
 	struct sockaddr_in serv_addr_sync;
 	struct hostent *server_sync;
 
@@ -645,26 +570,19 @@ void sync_client(){
     if(bytes < 0){
         cout << "erro ao conectar sync thread" << endl;
     }
-    bytes = sendMessageSync(userId,sync_sock);
 
+    bytes = sendMessageSync(userId,sync_sock);
     char buffer[ALOC_SIZE];
     bytes = read(sync_sock, buffer,ALOC_SIZE); //Socket confirm
-
-	
 	gsynckSock = sync_sock;
-	//pthread_mutex_lock(&m);
 
 	deleteAllFiles();
-	cout << "Arquivos deletados" << endl;
-
 	download_all_files(sync_sock);
-    cout << "Downloaded all files" << endl;
-
-	//pthread_mutex_unlock(&m); //Lock é dado antes de criar a thread, no método sync_client
 
 	if(pthread_create(&sync_thread_thread, NULL, sync_thread, &sync_sock)){
         cout << "erro ao criar sync thread" << endl;
     }
+
 	inotifyInit();
 }
 
@@ -672,60 +590,44 @@ void *sync_thread_propagate(void *socket){
 	//https://www.thegeekstuff.com/2010/04/inotify-c-program-example/
 
     int *socketAdress = (int *)socket;
-	//sync_socket(*socket);
 	int bytes;
 	char buffer[ALOC_SIZE];
+    bzero(buffer,ALOC_SIZE);
 
-	
-	bytes = read(*socketAdress, buffer, ALOC_SIZE);
+	bytes = read(gpropSock, buffer, ALOC_SIZE);
+
 	while (strcmp(buffer, "exit") != 0)
 	{
 		if(strcmp(buffer,"propagate") == 0){
 			pthread_mutex_lock(&m3);
-			cout << "Downloading New Files..." << endl; 
+			pthread_mutex_lock(&m2);
 			deletedAllFiles = true;
+			deleteAllFiles();
+            pthread_mutex_unlock(&m2);
 			download_all_files(gsynckSock);
 			pthread_mutex_unlock(&m3);
 		}
 		if(strcmp(buffer,"delete") == 0){
 			pthread_mutex_lock(&m3);
-			cout << "deleted" << endl;
-			deleteAllFiles();
 			deletedAllFiles = true;
+			deleteAllFiles();
 			download_all_files(gsynckSock);
 			pthread_mutex_unlock(&m3);
 		}
-		memset(buffer,0,ALOC_SIZE);
-		bytes = read(*socketAdress, buffer, ALOC_SIZE);
+		bzero(buffer,ALOC_SIZE);
+        bytes = recv(gpropSock, buffer, ALOC_SIZE, MSG_WAITALL);
 	}
-	
-
 }
 
 void sync_propagate(){
 
 	pthread_t sync_thread_prop;
-	char directory[256];
-	getcwd(directory, 256);
-
-	dirName = string(directory) + "/" + "sync_dir_" + userId;
-
-	if(mkdir(dirName.c_str(),0777) < 0){
-		cout << "Erro ao criar diretorio ou diretorio ja existente" << endl;
-	}else{
-		cout << "sync_dir_"+userId << " created" << endl;
-	}
-
-
-
     int sync_sock;
-	//AQUI TA CABREIRO
 	struct sockaddr_in serv_addr_sync;
 	struct hostent *server_sync;
 
 	server_sync = gethostbyname(hostname);
-
-    int service = PROPAGATESERVICE;
+    int service = PROPAGATESERVICE;    
     int bytes;
 
     if(server_sync == NULL){
@@ -745,51 +647,45 @@ void sync_propagate(){
 
     if (connect(sync_sock,(struct sockaddr *) &serv_addr_sync,sizeof(serv_addr_sync)) < 0){
         cout << "erro ao conectar sync_sock" << endl;
-
     }
 
     bytes = sendMessageSync(to_string(PROPAGATESERVICE),sync_sock);
     if(bytes < 0){
         cout << "erro ao conectar sync thread" << endl;
     }
+
     bytes = sendMessageSync(userId,sync_sock);
-
     char buffer[ALOC_SIZE];
-    bytes = read(sync_sock, buffer,ALOC_SIZE); //Socket confirm
+    bzero(buffer,ALOC_SIZE);
 
-	
-	gpropSock = sync_sock;
+    gpropSock = sync_sock;
 
 	if(pthread_create(&sync_thread_prop, NULL, sync_thread_propagate, &sync_sock)){
         cout << "erro ao criar sync thread" << endl;
     }
-	
+
 }
 
 
 int main(int argc, char *argv[])
 {
 
-//Estabelece conexão
-//argv1 : Host , argv2 = UserId
+	//Estabelece conexão
+	//argv1 : Host , argv2 = UserId
 	userId = argv[2];
 	hostname = (char *)malloc(sizeof(argv[1]));
+
 	strcpy(hostname, argv[1]);
 	ClientSocket();
+
 	if(connectSocket() == -1){
 		cout << "Erro ao conectar" << endl;
 		return 0;
 	}
-	
-	sync_client();
-	//pthread_mutex_lock(&m);
-	
-	sync_propagate();
-	cout << "entrou" << endl;
-	//pthread_mutex_unlock(&m);
+
+	sync_client();	
+    sync_propagate();
 	interface();
-	
-	
 	closeSocket();
 
 	return 0;
