@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netdb.h>
 #include <pthread.h>
 #include <sys/stat.h>
 #include <iostream>
@@ -29,6 +30,8 @@ pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 bool hasNewFile = false;
 
 char buffer[ALOC_SIZE];
+
+struct hostent *primaryServer;
 
 void initClient(int userId, int clientSocket)
 {
@@ -392,17 +395,55 @@ void *startPropagateThread(void *socket)
 	}
 }
 
+void *startBackupThread(void *socket)
+{
+	int *socketAdress = (int *)socket;
+
+	int bytes;
+	int userId;
+	char buffer[ALOC_SIZE];
+
+	bytes = read(*socketAdress, buffer, ALOC_SIZE);
+	
+	while(true){
+       if(strcmp(buffer,"DELETE") == 0){ //Primário mandando backup deletar arquivo
+			bytes = read(*socketAdress, buffer, ALOC_SIZE);
+			userId = atoi(buffer); //Le o userId
+			char fileName[ALOC_SIZE];
+			bytes = read(*socketAdress, buffer, ALOC_SIZE); //Le o nome do arquivo
+			strcpy(fileName, buffer);
+			deleteFile(userId,*socketAdress,fileName);
+	   }else if(strcmp(buffer,"RECEIVE") == 0){//Primário enviando arquivo ao backup
+
+	   }
+	}
+}
 
 int main(int argc, char *argv[])
 {
-	int sockfd, clientSockfd, n;
+
+	bool isPrimary = false;
+	int id;
+	if(strcmp(argv[1],"0") == 0)
+		isPrimary = true;
+	id  = atoi(argv[1]);
+
+
+
+
+	int sockfd, clientSockfd, n, primarySockfd;
 	socklen_t clilen;
 	struct sockaddr_in serv_addr, cli_addr;
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 		cout << "ERROR opening socket" << endl;
 
 	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_port = htons(PORT);
+
+	if(isPrimary)
+		serv_addr.sin_port = htons(PORT);
+	else
+		serv_addr.sin_port = htons(PORT + id);
+	
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 
 	bzero(&(serv_addr.sin_zero), 8);
@@ -412,49 +453,70 @@ int main(int argc, char *argv[])
 	listen(sockfd, 5);
 
 	clilen = sizeof(struct sockaddr_in);
-	pthread_t clientThread, syncThread, propThread;
+	pthread_t clientThread, syncThread, propThread, backupThread;
 	cout << "Server incializado..." << endl;
+
+	if(!isPrimary){
+		//Se conecta ao servidor primário
+		primaryServer = gethostbyname(argv[2]);
+
+		if((primarySockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+			std::cout << "ERROR while opening socket" << std::endl;
+
+		serv_addr.sin_family = AF_INET;
+		serv_addr.sin_port = htons(PORT);
+		serv_addr.sin_addr = *((struct in_addr *)primaryServer->h_addr);
+		bzero(&(serv_addr.sin_zero), 8);		
+	}
 
 	while (true)
 	{
-		if ((clientSockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen)) == -1)
-		{
-			cout << "Erro ao aceitar" << endl;
-		}
-		else
-		{
-			bzero(buffer, ALOC_SIZE);
-
-			int typeOfService;
-
-			char buffer[ALOC_SIZE];
-			read(clientSockfd, buffer, ALOC_SIZE);
-			typeOfService = atoi(buffer);
-
-			if (typeOfService < 0)
-				cout << "Erro ao ler do socket" << endl;
-
-			if (typeOfService == 1) // Atende request do cliente
+		if(isPrimary){ //Se é primário
+			if ((clientSockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen)) == -1)
 			{
-				if (pthread_create(&clientThread, NULL, startClientThread, &clientSockfd))
+				cout << "Erro ao aceitar" << endl;
+			}
+			else
+			{
+				bzero(buffer, ALOC_SIZE);
+
+				int typeOfService;
+
+				char buffer[ALOC_SIZE];
+				read(clientSockfd, buffer, ALOC_SIZE);
+				typeOfService = atoi(buffer);
+
+				if (typeOfService < 0)
+					cout << "Erro ao ler do socket" << endl;
+
+				if (typeOfService == 1) // Atende request do cliente
 				{
-					cout << "Erro ao abrir a thread do cliente" << endl;
+					if (pthread_create(&clientThread, NULL, startClientThread, &clientSockfd))
+					{
+						cout << "Erro ao abrir a thread do cliente" << endl;
+					}
+				}
+				else if (typeOfService == 2)
+				{ 	// Sincronização com cliente
+					if (pthread_create(&syncThread, NULL, startSyncThread, &clientSockfd))
+					{
+						cout << "Erro ao abrir a thread do cliente" << endl;
+					}
+				}
+				else if (typeOfService == 3)
+				{ 	// Sincronização com cliente
+					if (pthread_create(&propThread, NULL, startPropagateThread, &clientSockfd))
+					{
+						cout << "Erro ao abrir a thread do cliente" << endl;
+					}
 				}
 			}
-			else if (typeOfService == 2)
-			{ 	// Sincronização com cliente
-				if (pthread_create(&syncThread, NULL, startSyncThread, &clientSockfd))
-				{
-					cout << "Erro ao abrir a thread do cliente" << endl;
-				}
+		}else{ //Se é backup
+			if (pthread_create(&backupThread, NULL, startBackupThread, &primaryServer))
+			{
+				cout << "Erro ao abrir a thread do cliente" << endl;
 			}
-			else if (typeOfService == 3)
-			{ 	// Sincronização com cliente
-				if (pthread_create(&propThread, NULL, startPropagateThread, &clientSockfd))
-				{
-					cout << "Erro ao abrir a thread do cliente" << endl;
-				}
-			}
+
 		}
 	}
 	return 0;
