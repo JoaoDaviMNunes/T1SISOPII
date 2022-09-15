@@ -14,6 +14,7 @@
 #include <experimental/filesystem>
 #include <map>
 #include <set>
+#include <chrono>
 
 using namespace std;
 
@@ -24,6 +25,8 @@ map<int,int > mSockToUserId;
 map<int,set<int> > mUserIdToSocks;
 map<int,int> mUserPropSock;
 map<int,set<int> > mSocketPropagate;
+
+map<int,int> socketBackup; //Chave: Id , Valor: socket do servidor backup //Server para o primário repassar as infos para os backups
 
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 
@@ -71,7 +74,14 @@ void closeSocket(int userId){
 	}
 	cout << "All sockets closed" << endl;
 }
+void deleteFileToBackup(int userId, string filename){
 
+	for(auto const& backupServer : socketBackup){
+		sendMessage("DELETE",backupServer.second);
+		sendMessage(to_string(userId),backupServer.second);
+		sendMessage(filename,backupServer.second);
+	}
+}
 void deleteFile(int userId, int clientSocket, string filename){
 	DIR *dir;
     dir = opendir((const char *) to_string(userId).c_str()); // Tenta abrir o diretório.
@@ -95,37 +105,6 @@ void deleteFile(int userId, int clientSocket, string filename){
         return;
     }
     closedir(dir);
-}
-
-void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
-{
-	pthread_mutex_lock(&m);
-
-	string dir = to_string(userId) + "/" + fileName;
-	FILE *fp = fopen(dir.c_str(),"w");
-	int bytes;
-	char buffer[ALOC_SIZE];
-
-	bzero(buffer,ALOC_SIZE);
-
-	if (fileSize > 0)
-	{
-
-		while (fileSize > 0)
-		{
-			bytes = recv(clientSocket, buffer,min(ALOC_SIZE,fileSize),MSG_WAITALL);
-			
-            fwrite(buffer, 1, bytes, fp);
-
-			fileSize -= bytes;
-
-			bzero(buffer,ALOC_SIZE);
-		}
-	}
-
-	fclose(fp);
-	hasNewFile = true;
-	pthread_mutex_unlock(&m);
 }
 
 void sendFile(int userId,string filepath, int clientSocket)
@@ -161,6 +140,51 @@ void sendFile(int userId,string filepath, int clientSocket)
         cout << "Erro ao abrir o arquivo" << endl;
 	}
 }
+
+//Quando servidor primário recebe um arquivo ele envia esse arquivo para os backups
+void sendFileToBackup(int userId, string filename){
+
+	for(auto const& backupServer : socketBackup){
+		sendMessage("RECEIVE",backupServer.second);
+		sendMessage(to_string(userId),backupServer.second);
+		sendMessage(filename,backupServer.second);
+		sendFile(userId,filename,backupServer.second);
+	}
+}
+
+void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
+{
+	pthread_mutex_lock(&m);
+
+	string dir = to_string(userId) + "/" + fileName;
+	FILE *fp = fopen(dir.c_str(),"w");
+	int bytes;
+	char buffer[ALOC_SIZE];
+
+	bzero(buffer,ALOC_SIZE);
+
+	if (fileSize > 0)
+	{
+
+		while (fileSize > 0)
+		{
+			bytes = recv(clientSocket, buffer,min(ALOC_SIZE,fileSize),MSG_WAITALL);
+			
+            fwrite(buffer, 1, bytes, fp);
+
+			fileSize -= bytes;
+
+			bzero(buffer,ALOC_SIZE);
+		}
+	}
+
+	fclose(fp);
+	hasNewFile = true;
+	sendFileToBackup(userId, fileName);
+	pthread_mutex_unlock(&m);
+}
+
+
 
 void listenClient(int userId, int clientSocket)
 {
@@ -395,16 +419,20 @@ void *startPropagateThread(void *socket)
 	}
 }
 
+
 void *startBackupThread(void *socket)
 {
 	int *socketAdress = (int *)socket;
 
 	int bytes;
 	int userId;
+	int serverId;
 	char buffer[ALOC_SIZE];
 
 	bytes = read(*socketAdress, buffer, ALOC_SIZE);
-	
+	serverId = atoi(buffer);
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 	while(true){
        if(strcmp(buffer,"DELETE") == 0){ //Primário mandando backup deletar arquivo
 			bytes = read(*socketAdress, buffer, ALOC_SIZE);
@@ -413,7 +441,26 @@ void *startBackupThread(void *socket)
 			bytes = read(*socketAdress, buffer, ALOC_SIZE); //Le o nome do arquivo
 			strcpy(fileName, buffer);
 			deleteFile(userId,*socketAdress,fileName);
+			begin = std::chrono::steady_clock::now();
 	   }else if(strcmp(buffer,"RECEIVE") == 0){//Primário enviando arquivo ao backup
+			bytes = read(*socketAdress, buffer, ALOC_SIZE);
+			userId = atoi(buffer); //Le o userId
+			char fileName[ALOC_SIZE];
+			bytes = read(*socketAdress, buffer, ALOC_SIZE); //Le o nome do arquivo
+			strcpy(fileName, buffer);
+			int fileSize;
+			bytes = read(*socketAdress,buffer,ALOC_SIZE);
+			fileSize = atoi(buffer);
+			receiveFile(userId,fileName,fileSize,*socketAdress);
+			begin = std::chrono::steady_clock::now();
+	
+	   }else if(strcmp(buffer,"ALIVE") == 0){
+			begin = std::chrono::steady_clock::now();
+	   }	
+	   end = std::chrono::steady_clock::now();
+	   if(std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() > 2000){
+			//do election
+			cout << "Primario caiu" << endl;
 
 	   }
 	}
@@ -454,7 +501,10 @@ int main(int argc, char *argv[])
 
 	clilen = sizeof(struct sockaddr_in);
 	pthread_t clientThread, syncThread, propThread, backupThread;
-	cout << "Server incializado..." << endl;
+	if(isPrimary)
+		cout << "Server primary inicializado..." << endl;
+	else
+		cout << "Server backup inicializado..." << endl;
 
 	if(!isPrimary){
 		//Se conecta ao servidor primário
@@ -509,6 +559,16 @@ int main(int argc, char *argv[])
 					{
 						cout << "Erro ao abrir a thread do cliente" << endl;
 					}
+				}else if(typeOfService == 4){
+					//Le o id do servidor backup e armazena o socket no map socketBackup
+					int bytes;
+					int serverId;
+					char buffer[ALOC_SIZE];
+
+					bytes = read(clientSockfd, buffer, ALOC_SIZE);
+					serverId = atoi(buffer);
+					socketBackup[serverId] = clientSockfd;
+
 				}
 			}
 		}else{ //Se é backup
