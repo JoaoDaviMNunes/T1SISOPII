@@ -419,6 +419,19 @@ void *startPropagateThread(void *socket)
 	}
 }
 
+void *startAliveThread(void *socket)
+{
+	int *socketAdress = (int *)socket;
+
+
+	while(true){
+		for(auto const& backupServer : socketBackup){
+				cout << "Enviu ALIVE" << endl;
+				sendMessage("ALIVE",backupServer.second);
+		}
+		sleep(1);
+	}
+}
 
 void *startBackupThread(void *socket)
 {
@@ -463,8 +476,12 @@ void *startBackupThread(void *socket)
 			cout << "Primario caiu" << endl;
 
 	   }
+	   //cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << endl;
+		bzero(buffer, ALOC_SIZE);
+		bytes = read(*socketAdress, buffer, ALOC_SIZE);
+		cout << buffer << endl;
 	}
-}
+}	
 
 int main(int argc, char *argv[])
 {
@@ -474,8 +491,6 @@ int main(int argc, char *argv[])
 	if(strcmp(argv[1],"0") == 0)
 		isPrimary = true;
 	id  = atoi(argv[1]);
-
-
 
 
 	int sockfd, clientSockfd, n, primarySockfd;
@@ -495,28 +510,44 @@ int main(int argc, char *argv[])
 
 	bzero(&(serv_addr.sin_zero), 8);
 
-	if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+	if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0){
 		cout << "ERROR on binding" << endl;
+		return 0;
+	}
 	listen(sockfd, 5);
 
 	clilen = sizeof(struct sockaddr_in);
-	pthread_t clientThread, syncThread, propThread, backupThread;
+	pthread_t clientThread, syncThread, propThread, backupThread, aliveThread;
 	if(isPrimary)
 		cout << "Server primary inicializado..." << endl;
 	else
 		cout << "Server backup inicializado..." << endl;
 
 	if(!isPrimary){
+		cout << "Tentando se conectar ao primario" << endl;
 		//Se conecta ao servidor primário
 		primaryServer = gethostbyname(argv[2]);
 
 		if((primarySockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-			std::cout << "ERROR while opening socket" << std::endl;
+			std::cout << "ERROR while connecting to primary server" << std::endl;
 
 		serv_addr.sin_family = AF_INET;
 		serv_addr.sin_port = htons(PORT);
 		serv_addr.sin_addr = *((struct in_addr *)primaryServer->h_addr);
-		bzero(&(serv_addr.sin_zero), 8);		
+		bzero(&(serv_addr.sin_zero), 8);	
+
+    	if (connect(primarySockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0){
+      	  cout << "erro ao conectar sync_sock" << endl;
+   		 }	
+
+		sendMessage("4",primarySockfd); //Type of service = 4 : Backup
+		sendMessage(to_string(id),primarySockfd); //Envia id do servidor backup para o primario
+	}
+	if(!isPrimary){
+		if (pthread_create(&backupThread, NULL, startBackupThread, &primarySockfd))
+		{
+			cout << "Erro ao abrir a thread do cliente" << endl;
+		}
 	}
 
 	while (true)
@@ -569,15 +600,18 @@ int main(int argc, char *argv[])
 					serverId = atoi(buffer);
 					socketBackup[serverId] = clientSockfd;
 
-				}
+					cout << "Backup " << serverId << " conectado" << endl; 
+
+					if (pthread_create(&aliveThread, NULL, startAliveThread, &primarySockfd))
+					{
+						cout << "Erro ao abrir a thread do cliente" << endl;
+					}
+				}		
 			}
 		}else{ //Se é backup
-			if (pthread_create(&backupThread, NULL, startBackupThread, &primaryServer))
-			{
-				cout << "Erro ao abrir a thread do cliente" << endl;
-			}
-
+			
 		}
-	}
+
+	}	
 	return 0;
 }
