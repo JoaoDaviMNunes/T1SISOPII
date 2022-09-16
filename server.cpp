@@ -29,8 +29,10 @@ map<int,set<int> > mSocketPropagate;
 map<int,int> socketBackup; //Chave: Id , Valor: socket do servidor backup //Server para o primário repassar as infos para os backups
 
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
-
+bool hasDeleteFile = false;
 bool hasNewFile = false;
+string fileNameToPropagate;
+
 
 char buffer[ALOC_SIZE];
 
@@ -115,6 +117,8 @@ void deleteFile(int userId, int clientSocket, string filename){
         cout << "Erro na abertura do diretório" << endl;
         return;
     }
+
+
     closedir(dir);
 }
 
@@ -191,6 +195,7 @@ void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 
 	fclose(fp);
 	hasNewFile = true;
+	fileNameToPropagate = fileName;
 	sendFileToBackup(userId, fileName);
 	pthread_mutex_unlock(&m);
 }
@@ -236,9 +241,9 @@ void listenClient(int userId, int clientSocket)
 			bytes = read(clientSocket, buffer, ALOC_SIZE);
 			strcpy(fileName, buffer);
 			deleteFile(userId, clientSocket, fileName);
-			for(auto x: mSocketPropagate[userId]){
-				sendMessage("delete",x);
-			}
+			fileNameToPropagate = fileName;
+            hasDeleteFile = true;
+
 		}
 		bzero(buffer,ALOC_SIZE);
 		bytes = read(clientSocket, buffer, ALOC_SIZE);
@@ -417,14 +422,28 @@ void *startPropagateThread(void *socket)
 	while(true){
         pthread_mutex_lock(&m);
 
-		if(hasNewFile){
+		if(hasNewFile || hasDeleteFile){
 			for(auto x:mSocketPropagate[userId]){
-				hasNewFile = false;
+                cout << "PROPAGATE" << endl;
 				bytes = sendMessage("propagate",x);
+
                 if(bytes < 0){
                     cout << "ERRO AO ENVIAR PROPAGATE" << endl;
                 }
+                if(hasNewFile){
+                    cout << "Enviou propagate upload" << endl;
+                    bytes = sendMessage("upload",x);
+                    bytes = sendMessage(fileNameToPropagate,x);
+                }
+                if(hasDeleteFile){
+                    cout << "Enviou propagate delete" << endl;
+                    bytes = sendMessage("delete",x);
+                    cout << "Deletar: " << fileNameToPropagate << endl;
+                    bytes = sendMessage(fileNameToPropagate,x);
+                }
 			}
+			hasNewFile = false;
+            hasDeleteFile = false;
 		}
         pthread_mutex_unlock(&m);
 	}

@@ -49,6 +49,8 @@ struct hostent *server;
 string userId;
 char *hostname;
 
+string filenameToBeIgnored = "";
+
 bool deletedAllFiles = false;
 
 void ClientSocket(){
@@ -215,6 +217,45 @@ void sendFile(string filepath){
 	pthread_mutex_unlock(&m2);
 }
 
+void downloadFileSync(string fileName){ //TODO
+	//envia requisição de download para o server
+	sendMessage("download");
+	sendMessage(fileName);
+
+	ofstream file;
+	string filepath = "./sync_dir_" + userId + "/" + fileName;
+
+
+	file.open(filepath);
+	int bytes;
+	char buffer[ALOC_SIZE];
+    cout << "baixando arquivo" << endl;
+
+	int fileSize;
+	bytes = read(sockfd,buffer,ALOC_SIZE);
+	if(strcmp(buffer,"erro") == 0){
+		cout << "erro ao baixar arquivo do servidor";
+		return;
+	}
+
+	fileSize = atoi(buffer);
+	cout << fileName << endl << fileSize << endl;
+
+	bzero(buffer, ALOC_SIZE);
+	if (fileSize > 0){
+		while (fileSize > 0)
+		{
+			bytes = recv(sockfd, buffer, min(fileSize, ALOC_SIZE), MSG_WAITALL);
+			file.write(buffer, bytes);
+
+			fileSize -= bytes;
+            bzero(buffer, ALOC_SIZE);
+		}
+	}
+	file.close();
+
+}
+
 void downloadFile(string fileName){ //TODO
 	//envia requisição de download para o server
 	sendMessage("download");
@@ -253,7 +294,7 @@ void downloadFile(string fileName){ //TODO
 void download_all_files(int sync_sock){
 	//seção crítica entre downloadall e sendfile
 	pthread_mutex_lock(&m2);
-    
+
     string command = "DOWNLOADALLFILES";
     char buffer[ALOC_SIZE];
     bzero(buffer,ALOC_SIZE);
@@ -293,7 +334,7 @@ void download_all_files(int sync_sock){
             while(fileSize > 0){
 
                 bytes = recv(sync_sock, buffer, min(fileSize, ALOC_SIZE), MSG_WAITALL); //conteudo do arquivo
-				
+
                 fwrite(buffer, 1, bytes,file);
                 fileSize -= bytes;
                 bzero(buffer, ALOC_SIZE);
@@ -471,7 +512,7 @@ void *sync_thread(void *socket){
 			perror( "read" );
 		}
 
-		if(deletedAllFiles){
+        if(deletedAllFiles){
             pthread_mutex_lock(&m3);
 
 			deletedAllFiles = false;
@@ -480,42 +521,48 @@ void *sync_thread(void *socket){
             pthread_mutex_unlock(&m3);
 		}
 
-		while ( i < length ) {
-			struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];
-
-			if ( event->len ) {
-
-				if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
-
-					strcpy(path, dirName.c_str());
-					strcat(path, "/");
-					strcat(path, event->name);
+            while ( i < length ) {
 
 
-					if(exists(path) && (event->name[0] != '.')){
-						char fpath[256] = "sync_dir_";
-						strcat(fpath, userId.c_str());
-						strcat(fpath, "/");
-						strcat(fpath, event->name);
-						sendFile(fpath);						
-					}
-				}
-				else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
-					if(event->name[0] != '.')
-					{
-						string filename = event->name;
-						char ch = '/';
+                struct inotify_event *event = ( struct inotify_event * ) &buffer[ i ];
 
-						filename = filename.substr(filename.find_last_of(ch) + 1 ,filename.length()- filename.find(ch));
-						sendDeleteFile(filename);						
-					}
-				}
-			}
+                if ( event->len) {
 
-			i += EVENT_SIZE + event->len;
-		}
-		i = 0;           
-		sleep(5);
+                    if ( event->mask & IN_CREATE || event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
+
+                        strcpy(path, dirName.c_str());
+                        strcat(path, "/");
+                        strcat(path, event->name);
+
+
+                        if(strcmp(event->name,filenameToBeIgnored.c_str()) != 0 && exists(path) && (event->name[0] != '.' && event->name[0] != '*')){
+                            char fpath[256] = "sync_dir_";
+                            strcat(fpath, userId.c_str());
+                            strcat(fpath, "/");
+                            strcat(fpath, event->name);
+                            cout << "SENDING: " << event->name << endl;
+                            sendFile(fpath);
+                        }
+
+                    }
+                    else if ( event->mask & IN_DELETE || event->mask & IN_MOVED_FROM ) {
+                        if(event->name[0] != '.')
+                        {
+                            string filename = event->name;
+                            char ch = '/';
+
+                            filename = filename.substr(filename.find_last_of(ch) + 1 ,filename.length()- filename.find(ch));
+                            sendDeleteFile(filename);
+                        }
+                    }
+                }
+
+                i += EVENT_SIZE + event->len;
+
+            }
+
+		i = 0;
+		sleep(1);
 	}
 
 	inotify_rm_watch( fd, wd );
@@ -594,11 +641,12 @@ void *sync_thread_propagate(void *socket){
 	char buffer[ALOC_SIZE];
     bzero(buffer,ALOC_SIZE);
 
+
 	bytes = read(gpropSock, buffer, ALOC_SIZE);
 
 	while (strcmp(buffer, "exit") != 0)
 	{
-		if(strcmp(buffer,"propagate") == 0){
+		/*if(strcmp(buffer,"propagate") == 0){
 			pthread_mutex_lock(&m3);
 			pthread_mutex_lock(&m2);
 			deletedAllFiles = true;
@@ -613,6 +661,37 @@ void *sync_thread_propagate(void *socket){
 			deleteAllFiles();
 			download_all_files(gsynckSock);
 			pthread_mutex_unlock(&m3);
+		}*/
+
+		if(strcmp(buffer, "propagate")== 0){
+            cout << "PROPAGATE RECEBIDO" << endl;
+            bzero(buffer, ALOC_SIZE);
+            bytes = read(gpropSock, buffer, ALOC_SIZE);
+            cout << bytes << " - " << buffer << endl;
+            if(strcmp(buffer, "upload")== 0){
+                cout << "UPLOAD PROPAGATE" << endl;
+                bzero(buffer, ALOC_SIZE);
+                bytes = read(gpropSock, buffer, ALOC_SIZE);
+
+                pthread_mutex_lock(&m3);
+                inotify_rm_watch(fd,wd);
+                deletedAllFiles = true;
+                downloadFileSync(buffer);
+                inotifyInit();
+
+                pthread_mutex_unlock(&m3);
+
+            }
+            else if(strcmp(buffer, "delete")== 0){
+                cout << "DELETE PROPAGATE" << endl;
+                bzero(buffer, ALOC_SIZE);
+                bytes = read(gpropSock, buffer, ALOC_SIZE);
+                cout << "FILENAME: " << buffer <<endl;
+                deleteFile(buffer);
+            }
+            else{
+                cout << "Erro ao propagar: requisição não reconhecida" << endl;
+            }
 		}
 		bzero(buffer,ALOC_SIZE);
         bytes = recv(gpropSock, buffer, ALOC_SIZE, MSG_WAITALL);
@@ -627,7 +706,7 @@ void sync_propagate(){
 	struct hostent *server_sync;
 
 	server_sync = gethostbyname(hostname);
-    int service = PROPAGATESERVICE;    
+    int service = PROPAGATESERVICE;
     int bytes;
 
     if(server_sync == NULL){
@@ -683,10 +762,11 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
-	sync_client();	
+	sync_client();
     sync_propagate();
 	interface();
 	closeSocket();
 
 	return 0;
 }
+
