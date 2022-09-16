@@ -557,8 +557,8 @@ void *sync_thread(void *socket){
                     }
                 }
 
-                i += EVENT_SIZE + event->len;
-
+                //i += EVENT_SIZE + event->len;
+                i = length;
             }
 
 		i = 0;
