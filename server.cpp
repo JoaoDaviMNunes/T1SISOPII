@@ -36,7 +36,26 @@ char buffer[ALOC_SIZE];
 
 struct hostent *primaryServer;
 
-void initClient(int userId, int clientSocket)
+
+int sendMessage(std::string message, int clientSocket){
+    char buffer[ALOC_SIZE];
+
+    strcpy(buffer,message.c_str());
+    int bytes = write(clientSocket , buffer , ALOC_SIZE);
+
+    return bytes;
+}
+
+
+void sendInitClientToBackup(int userId){
+
+    for(auto const& backupServer : socketBackup){
+        sendMessage("INIT",backupServer.second);
+        sendMessage(to_string(userId),backupServer.second);
+    }
+}
+
+void initClient(int userId)
 {
 	if (mkdir(to_string(userId).c_str(), 0777) < 0)
 	{
@@ -48,22 +67,14 @@ void initClient(int userId, int clientSocket)
 		cout << "Criando diretorio do cliente"
 			 << " " << userId << endl;
 	}
+	sendInitClientToBackup(userId);
+
 }
 
 
 int getFileSize(string filepath){
         ifstream in(filepath, std::ifstream::ate | std::ifstream::binary);
     		return in.tellg();
-}
-
-int sendMessage(std::string message, int clientSocket){
-			char buffer[ALOC_SIZE];
-
-			strcpy(buffer,message.c_str());
-
-			int bytes = write(clientSocket , buffer , ALOC_SIZE);
-
-			return bytes;
 }
 
 void closeSocket(int userId){
@@ -169,7 +180,7 @@ void receiveFile(int userId, string fileName, int fileSize, int clientSocket)
 		while (fileSize > 0)
 		{
 			bytes = recv(clientSocket, buffer,min(ALOC_SIZE,fileSize),MSG_WAITALL);
-			
+
             fwrite(buffer, 1, bytes, fp);
 
 			fileSize -= bytes;
@@ -246,7 +257,7 @@ int countFiles(string dirName)
     if(dir!=NULL)
     {
         while((dent=readdir(dir))!=NULL){
-            
+
             filename = dent->d_name;
             path = dirName + (string) "/" + filename;
             struct stat info;
@@ -322,7 +333,7 @@ void listenSync(int userId, int clientSocket)
 			char fileSize[ALOC_SIZE];
 			int ifileSize;
 			bytes = read(clientSocket, buffer, ALOC_SIZE);
-			strcpy(fileName, buffer);			
+			strcpy(fileName, buffer);
 			bytes = read(clientSocket, buffer, ALOC_SIZE);
 			strcpy(fileSize, buffer);
 			ifileSize = atoi(fileSize);
@@ -353,7 +364,7 @@ void *startClientThread(void *socketAd)
 	mUserIdToSocks[userId].insert(*socket);
 
 	sendMessage("Y",*socket);
-	initClient(userId, *socket);
+	initClient(userId);
 	listenClient(userId, *socket);
 }
 
@@ -399,7 +410,7 @@ void *startPropagateThread(void *socket)
 	mUserIdToSocks[userId].insert(*socketAdress);
 	mUserPropSock[userId] = *socketAdress;
 	mSocketPropagate[userId].insert(*socketAdress);
-	
+
 	// Informa ao usuário que conseguiu conectar ao server
 	char isConnected = 'Y';
 
@@ -426,7 +437,6 @@ void *startAliveThread(void *socket)
 
 	while(true){
 		for(auto const& backupServer : socketBackup){
-				cout << "Enviu ALIVE" << endl;
 				sendMessage("ALIVE",backupServer.second);
 		}
 		sleep(1);
@@ -461,15 +471,20 @@ void *startBackupThread(void *socket)
 			char fileName[ALOC_SIZE];
 			bytes = read(*socketAdress, buffer, ALOC_SIZE); //Le o nome do arquivo
 			strcpy(fileName, buffer);
-			int fileSize;
 			bytes = read(*socketAdress,buffer,ALOC_SIZE);
-			fileSize = atoi(buffer);
+			int fileSize = atoi(buffer);
 			receiveFile(userId,fileName,fileSize,*socketAdress);
 			begin = std::chrono::steady_clock::now();
-	
+
 	   }else if(strcmp(buffer,"ALIVE") == 0){
 			begin = std::chrono::steady_clock::now();
-	   }	
+	   }else if(strcmp(buffer,"INIT") == 0){
+            begin = std::chrono::steady_clock::now();
+            bytes = read(*socketAdress, buffer, ALOC_SIZE);
+			userId = atoi(buffer); //Le o userId
+            initClient(userId);
+            cout << "Client initialized" << endl;
+	   }
 	   end = std::chrono::steady_clock::now();
 	   if(std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() > 2000){
 			//do election
@@ -479,9 +494,9 @@ void *startBackupThread(void *socket)
 	   //cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << endl;
 		bzero(buffer, ALOC_SIZE);
 		bytes = read(*socketAdress, buffer, ALOC_SIZE);
-		cout << buffer << endl;
+
 	}
-}	
+}
 
 int main(int argc, char *argv[])
 {
@@ -505,7 +520,7 @@ int main(int argc, char *argv[])
 		serv_addr.sin_port = htons(PORT);
 	else
 		serv_addr.sin_port = htons(PORT + id);
-	
+
 	serv_addr.sin_addr.s_addr = INADDR_ANY;
 
 	bzero(&(serv_addr.sin_zero), 8);
@@ -534,11 +549,11 @@ int main(int argc, char *argv[])
 		serv_addr.sin_family = AF_INET;
 		serv_addr.sin_port = htons(PORT);
 		serv_addr.sin_addr = *((struct in_addr *)primaryServer->h_addr);
-		bzero(&(serv_addr.sin_zero), 8);	
+		bzero(&(serv_addr.sin_zero), 8);
 
     	if (connect(primarySockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0){
       	  cout << "erro ao conectar sync_sock" << endl;
-   		 }	
+   		 }
 
 		sendMessage("4",primarySockfd); //Type of service = 4 : Backup
 		sendMessage(to_string(id),primarySockfd); //Envia id do servidor backup para o primario
@@ -600,18 +615,18 @@ int main(int argc, char *argv[])
 					serverId = atoi(buffer);
 					socketBackup[serverId] = clientSockfd;
 
-					cout << "Backup " << serverId << " conectado" << endl; 
+					cout << "Backup " << serverId << " conectado" << endl;
 
 					if (pthread_create(&aliveThread, NULL, startAliveThread, &primarySockfd))
 					{
 						cout << "Erro ao abrir a thread do cliente" << endl;
 					}
-				}		
+				}
 			}
 		}else{ //Se é backup
-			
+
 		}
 
-	}	
+	}
 	return 0;
 }
