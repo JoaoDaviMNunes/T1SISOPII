@@ -90,6 +90,7 @@ void closeSocket(int userId){
 void deleteFileToBackup(int userId, string filename){
 
 	for(auto const& backupServer : socketBackup){
+        cout << "SEND DELETE" << endl;
 		sendMessage("DELETE",backupServer.second);
 		sendMessage(to_string(userId),backupServer.second);
 		sendMessage(filename,backupServer.second);
@@ -117,7 +118,6 @@ void deleteFile(int userId, int clientSocket, string filename){
         cout << "Erro na abertura do diretório" << endl;
         return;
     }
-
 
     closedir(dir);
 }
@@ -244,6 +244,7 @@ void listenClient(int userId, int clientSocket)
 			fileNameToPropagate = fileName;
             hasDeleteFile = true;
 
+            deleteFileToBackup(userId,fileName);
 		}
 		bzero(buffer,ALOC_SIZE);
 		bytes = read(clientSocket, buffer, ALOC_SIZE);
@@ -513,7 +514,7 @@ void *startBackupThread(void *socket)
 	   //cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << endl;
 		bzero(buffer, ALOC_SIZE);
 		bytes = read(*socketAdress, buffer, ALOC_SIZE);
-
+        cout << "COMANDO: " << buffer << endl;
 	}
 }
 
