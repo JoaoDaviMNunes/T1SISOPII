@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <netdb.h>
 #include <pthread.h>
 #include <sys/stat.h>
@@ -33,6 +34,12 @@ bool hasDeleteFile = false;
 bool hasNewFile = false;
 string fileNameToPropagate;
 
+set<string> devicesAddress; // Salva endereços ips dos devices para reconexão
+
+struct CliInfo {
+	int sockfd;
+	struct sockaddr_in* cli_addr;
+};
 
 char buffer[ALOC_SIZE];
 
@@ -354,24 +361,38 @@ void listenSync(int userId, int clientSocket)
 	}
 }
 
-void *startClientThread(void *socketAd)
+void sendCliAddrToBackups(struct sockaddr_in* cli_addr) {
+	// Pega o endereço ip do cliente
+	char str[INET_ADDRSTRLEN];
+	inet_ntop( AF_INET, &cli_addr, str, INET_ADDRSTRLEN );
+	cout << "novo device: " << str << endl;
+	// envia o endereço para os backups (o primário não precisa salvar)
+	for (auto const& backup_pair : socketBackup) {
+		if (write(backup_pair.second, str, INET_ADDRSTRLEN) < 0)
+			cout << "Erro ao enviar endereço do device para o backup" << endl;
+	}
+}
+
+void *startClientThread(void *client_info)
 {
-    int *socket = (int *)socketAd;
+	struct CliInfo* cli_info = (struct CliInfo*) client_info;
+    int socket = cli_info->sockfd;
 	int bytes;
 	int userId;
 	char buffer[ALOC_SIZE];
-	bytes = read(*socket, buffer, ALOC_SIZE);
+	bytes = read(socket, buffer, ALOC_SIZE);
 	userId = atoi(buffer);
 	if(bytes < 0)
 		cout << "erro ao ler userID" << endl;
 	char isConnected = 'Y';
 
-	mSockToUserId[*socket] = userId;
-	mUserIdToSocks[userId].insert(*socket);
+	mSockToUserId[socket] = userId;
+	mUserIdToSocks[userId].insert(socket);
 
-	sendMessage("Y",*socket);
+	sendMessage("Y",socket);
 	initClient(userId);
-	listenClient(userId, *socket);
+	sendCliAddrToBackups(cli_info->cli_addr);
+	listenClient(userId, socket);
 }
 
 void *startSyncThread(void *socket)
@@ -503,7 +524,13 @@ void *startBackupThread(void *socket)
             bytes = read(*socketAdress, buffer, ALOC_SIZE);
 			userId = atoi(buffer); //Le o userId
             initClient(userId);
-            cout << "Client initialized" << endl;
+			char addr[INET_ADDRSTRLEN] = "";
+			bytes = read(*socketAdress,addr,INET_ADDRSTRLEN);
+			if (bytes<0) {
+				cout << "cannot read device address" << endl;
+			}
+			devicesAddress.insert(string(addr));
+			cout << "novo device: " << addr << endl;
 	   }
 	   end = std::chrono::steady_clock::now();
 	   if(std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() > 2000){
@@ -607,7 +634,8 @@ int main(int argc, char *argv[])
 
 				if (typeOfService == 1) // Atende request do cliente
 				{
-					if (pthread_create(&clientThread, NULL, startClientThread, &clientSockfd))
+					struct CliInfo cli_info = {clientSockfd, &cli_addr};
+					if (pthread_create(&clientThread, NULL, startClientThread, &cli_info))
 					{
 						cout << "Erro ao abrir a thread do cliente" << endl;
 					}
@@ -625,7 +653,8 @@ int main(int argc, char *argv[])
 					{
 						cout << "Erro ao abrir a thread do cliente" << endl;
 					}
-				}else if(typeOfService == 4){
+				}
+				else if(typeOfService == 4){
 					//Le o id do servidor backup e armazena o socket no map socketBackup
 					int bytes;
 					int serverId;
