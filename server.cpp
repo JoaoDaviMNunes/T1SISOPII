@@ -28,6 +28,7 @@ map<int,int> mUserPropSock;
 map<int,set<int> > mSocketPropagate;
 
 map<int,int> socketBackup; //Chave: Id , Valor: socket do servidor backup //Server para o primário repassar as infos para os backups
+map<int,string> backupToIp; //Chave: socketOfBkacup , idOfBackup;
 
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 bool hasDeleteFile = false;
@@ -35,6 +36,12 @@ bool hasNewFile = false;
 string fileNameToPropagate;
 
 set<string> devicesAddress; // Salva endereços ips dos devices para reconexão
+
+set<string> listOfBackupsIp;
+
+bool doingElection = false;
+
+int id;
 
 struct CliInfo {
 	int sockfd;
@@ -364,7 +371,7 @@ void listenSync(int userId, int clientSocket)
 void sendCliAddrToBackups(struct sockaddr_in* cli_addr) {
 	// Pega o endereço ip do cliente
 	char str[INET_ADDRSTRLEN];
-	inet_ntop( AF_INET, &cli_addr, str, INET_ADDRSTRLEN );
+	inet_ntop( AF_INET, &cli_addr->sin_addr, str, INET_ADDRSTRLEN );
 	cout << "novo device: " << str << endl;
 	// envia o endereço para os backups (o primário não precisa salvar)
 	for (auto const& backup_pair : socketBackup) {
@@ -477,11 +484,202 @@ void *startAliveThread(void *socket)
 
 
 	while(true){
+
+		set<string> listOfBackupsAlive;
 		for(auto const& backupServer : socketBackup){
-				sendMessage("ALIVE",backupServer.second);
+				if(sendMessage("ALIVE",backupServer.second) >=  0){
+					listOfBackupsAlive.insert(backupToIp[backupServer.second]);
+				}else{
+					socketBackup.erase(backupServer.first);
+					cout << "Erro ao enviar alive ao backup: " << backupServer.first << endl;
+				}
+		}
+		//Passando para cada backup uma "lista" de ips:porta de todos backups vivos conectados ao server primario
+		for(auto const& backupServer : socketBackup){
+			if(sendMessage("LISTBACKUP",backupServer.second) < 0){
+				socketBackup.erase(backupServer.first);
+				continue;
+			}
+				
+			int qtOfBackupIps = listOfBackupsAlive.size();
+			sendMessage(to_string(qtOfBackupIps),backupServer.second);
+			for(auto backupIp : listOfBackupsAlive){
+				sendMessage(backupIp, backupServer.second);
+			}
 		}
 		sleep(1);
 	}
+}
+void *startElectionThread(void *socketRec)
+{
+	int *socketAdress = (int *)socketRec;
+	int bytes;
+	int idRead;
+	int qtOfDynamicList;
+	int idOfFirst;
+	set<string> dynamicList = listOfBackupsIp;
+
+
+	while(true){
+		bytes = read(*socketAdress, buffer, ALOC_SIZE);
+		idRead = stoi(buffer);
+
+		string ipOfNext ="-";
+		int minPort = 1e9;
+
+		if(idRead == id){//Elected
+			cout << idRead <<" : eleito" << endl;
+			break;
+		}
+
+		for(auto ip: dynamicList){
+			string portStr = ip.substr(ip.find(':')+1,4);
+			int port = stoi(portStr);
+			if(port > PORT + id){
+				minPort = min(minPort,port);
+				ipOfNext = ip.substr(0,ip.find(":"));
+			}
+		}
+
+		//There is no port greater than mine
+
+		if(ipOfNext == "-"){
+			for(auto ip:dynamicList){
+				string portStr = ip.substr(ip.find(':')+1,4);
+				int port = stoi(portStr);
+				if(port < minPort){
+					minPort = min(minPort,port);
+					ipOfNext = ip.substr(0,ip.find(":"));
+				}
+			}
+		}
+
+
+		int sockOfNextBackup;
+		struct sockaddr_in serv_addr_backup;
+		struct hostent *server_backup;
+
+		server_backup = gethostbyname(ipOfNext.c_str());
+		int bytes;
+
+		if(server_backup == NULL){
+			cout << "erro ao criar sync socket 1 " << endl;
+
+		}
+		if((sockOfNextBackup = socket(AF_INET, SOCK_STREAM, 0)) == -1){
+			cout << "erro ao criar sync socket 2 " << endl;
+
+		}
+
+		serv_addr_backup.sin_family = AF_INET;
+		serv_addr_backup.sin_port = htons(minPort);
+		serv_addr_backup.sin_addr = *((struct in_addr *)server_backup->h_addr);
+
+		bzero(&(serv_addr_backup.sin_zero), 8);
+
+		if (connect(sockOfNextBackup,(struct sockaddr *) &serv_addr_backup,sizeof(serv_addr_backup)) < 0){
+			cout << "erro ao conectar sync_sock" << endl;
+		}
+		//Connected on the next of the ring
+
+		//Send message
+		bytes = sendMessage("5",sockOfNextBackup); //5 = typeOfService ELECTION
+		if(idRead > id){
+			//Send my id
+			bytes = sendMessage(to_string(id),sockOfNextBackup);
+
+		}else{
+			bytes = sendMessage(to_string(idRead),sockOfNextBackup);
+		}
+	
+
+		
+	}
+}
+
+void doElection(){
+
+	string ipOfNext ="-";
+	int minPort = 1e9;
+
+
+	if(listOfBackupsIp.size() == 1){//Only alive
+		cout << id <<" Eleito" << endl;
+		return;
+
+	}else{ // Send message to the next of the ring
+		for(auto ip : listOfBackupsIp){
+			string portStr = ip.substr(ip.find(':')+1,4);
+			int port = stoi(portStr);
+			if(port > PORT + id){
+				minPort = min(minPort,port);
+				ipOfNext = ip.substr(0,ip.find(":"));
+			}
+
+			//if(port != PORT + id){
+			//	dynamicList.insert(ip);
+			//}
+		}
+		if(ipOfNext == "-"){
+			for(auto ip:listOfBackupsIp){
+				string portStr = ip.substr(ip.find(':')+1,4);
+				int port = stoi(portStr);
+				if(port < minPort){
+					minPort = min(minPort,port);
+					ipOfNext = ip.substr(0,ip.find(":"));
+				}
+			}
+		}
+	}
+
+	
+
+	int sockOfNextBackup;
+	struct sockaddr_in serv_addr_backup;
+	struct hostent *server_backup;
+
+	cout << "IPOFNEXT: " << ipOfNext << ":" << minPort << endl;
+
+	server_backup = gethostbyname(ipOfNext.c_str());
+    int bytes;
+
+    if(server_backup == NULL){
+        cout << "erro ao achar server backup " << endl;
+
+    }
+    if((sockOfNextBackup = socket(AF_INET, SOCK_STREAM, 0)) == -1){
+        cout << "erro ao criar socket backup " << endl;
+
+    }
+
+    serv_addr_backup.sin_family = AF_INET;
+    serv_addr_backup.sin_port = htons(minPort);
+    serv_addr_backup.sin_addr = *((struct in_addr *)server_backup->h_addr);
+
+    bzero(&(serv_addr_backup.sin_zero), 8);
+
+    if (connect(sockOfNextBackup,(struct sockaddr *) &serv_addr_backup,sizeof(serv_addr_backup)) < 0){
+        cout << "erro ao conectar com backup " << endl;
+    }else{
+		cout << "Conectado ao proximo backup com sucesso " << endl;
+
+	}
+	//Connected on the next of the ring
+
+	//Send message
+	bytes = sendMessage("5",sockOfNextBackup); //5 = typeOfService ELECTION
+	if(bytes < 0){
+		cout << "erro ao enviar typeOfService para backup" << endl;
+	}
+	//Send my id
+	bytes = sendMessage(to_string(id),sockOfNextBackup);
+	if(bytes < 0){
+		cout << "erro ao enviar id para backup" << endl;
+	}
+	
+
+
+
 }
 
 void *startBackupThread(void *socket)
@@ -519,7 +717,22 @@ void *startBackupThread(void *socket)
 
 	   }else if(strcmp(buffer,"ALIVE") == 0){
 			begin = std::chrono::steady_clock::now();
-	   }else if(strcmp(buffer,"INIT") == 0){
+
+			
+
+	   }else if(strcmp(buffer,"LISTBACKUP") == 0){
+	
+			begin = std::chrono::steady_clock::now();
+			bytes = read(*socketAdress,buffer,ALOC_SIZE);
+			int qtOfBackupIps = atoi(buffer);
+			for(int i = 0; i < qtOfBackupIps; i++){
+				bytes = read(*socketAdress,buffer,ALOC_SIZE);
+				listOfBackupsIp.insert(buffer);
+				cout << "Ip: " << buffer << endl;
+			}
+       }
+
+	   else if(strcmp(buffer,"INIT") == 0){
             begin = std::chrono::steady_clock::now();
             bytes = read(*socketAdress, buffer, ALOC_SIZE);
 			userId = atoi(buffer); //Le o userId
@@ -535,21 +748,26 @@ void *startBackupThread(void *socket)
 	   end = std::chrono::steady_clock::now();
 	   if(std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() > 2000){
 			//do election
-			cout << "Primario caiu" << endl;
-
+			if(doingElection == false){
+				cout << "Primario caiu" << endl;
+			
+				cout << "Doing election..." << endl; 
+				doElection();
+				doingElection = true;
+			}
 	   }
 	   //cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << endl;
 		bzero(buffer, ALOC_SIZE);
 		bytes = read(*socketAdress, buffer, ALOC_SIZE);
-        cout << "COMANDO: " << buffer << endl;
+        //cout << "COMANDO: " << buffer << endl;
 	}
 }
 
 int main(int argc, char *argv[])
 {
-
+	doingElection = false;
 	bool isPrimary = false;
-	int id;
+
 	if(strcmp(argv[1],"0") == 0)
 		isPrimary = true;
 	id  = atoi(argv[1]);
@@ -579,7 +797,7 @@ int main(int argc, char *argv[])
 	listen(sockfd, 5);
 
 	clilen = sizeof(struct sockaddr_in);
-	pthread_t clientThread, syncThread, propThread, backupThread, aliveThread;
+	pthread_t clientThread, syncThread, propThread, backupThread, aliveThread, electionThread;
 	if(isPrimary)
 		cout << "Server primary inicializado..." << endl;
 	else
@@ -655,25 +873,53 @@ int main(int argc, char *argv[])
 					}
 				}
 				else if(typeOfService == 4){
-					//Le o id do servidor backup e armazena o socket no map socketBackup
-					int bytes;
-					int serverId;
-					char buffer[ALOC_SIZE];
+                    //Le o id do servidor backup e armazena o socket no map socketBackup
+                    int bytes;
+                    int serverId;
+                    char buffer[ALOC_SIZE];
 
-					bytes = read(clientSockfd, buffer, ALOC_SIZE);
-					serverId = atoi(buffer);
-					socketBackup[serverId] = clientSockfd;
+                    bytes = read(clientSockfd, buffer, ALOC_SIZE);
+                    serverId = atoi(buffer);
+                    socketBackup[serverId] = clientSockfd;
+                    char str[INET_ADDRSTRLEN];
+                    string port = to_string(ntohs(cli_addr.sin_port));
+                    inet_ntop( AF_INET, &cli_addr.sin_addr, str, INET_ADDRSTRLEN );
+                    backupToIp[clientSockfd] = str;
+                    backupToIp[clientSockfd] += ":" + to_string(4000 + serverId);
 
-					cout << "Backup " << serverId << " conectado" << endl;
+                    cout << backupToIp[clientSockfd] << endl;
 
-					if (pthread_create(&aliveThread, NULL, startAliveThread, &primarySockfd))
-					{
-						cout << "Erro ao abrir a thread do cliente" << endl;
-					}
-				}
+                    cout << "Backup " << serverId << " conectado" << endl;
+
+                    if (pthread_create(&aliveThread, NULL, startAliveThread, &primarySockfd))
+                    {
+                        cout << "Erro ao abrir a thread do cliente" << endl; 
+                    }
+                }
 			}
 		}else{ //Se é backup
+			if ((clientSockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen)) == -1)
+			{
+				cout << "Erro ao aceitar" << endl;
+			}
+			bzero(buffer, ALOC_SIZE);
 
+				int typeOfService;
+
+				char buffer[ALOC_SIZE];
+				read(clientSockfd, buffer, ALOC_SIZE);
+				typeOfService = atoi(buffer);
+			if(typeOfService == 5){//ELECTION
+					cout << "Conexao de eleicao recebida" << endl;
+					int bytes;
+                    int serverId;
+                    char buffer[ALOC_SIZE];
+
+					if (pthread_create(&electionThread, NULL, startElectionThread, &clientSockfd))
+                    {
+                        cout << "Erro ao abrir a thread do cliente" << endl; 
+                    }
+				}
 		}
 
 	}
