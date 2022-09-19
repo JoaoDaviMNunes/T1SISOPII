@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <errno.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -58,6 +59,9 @@ int sendMessage(std::string message, int clientSocket){
 
     strcpy(buffer,message.c_str());
     int bytes = write(clientSocket , buffer , ALOC_SIZE);
+	if(bytes < 0){
+		cout << "err" << endl;
+	}
 
     return bytes;
 }
@@ -478,36 +482,99 @@ void *startPropagateThread(void *socket)
 	}
 }
 
+void printSet(set<string> s){
+	cout << "Set: ";
+	for(auto x : s){
+		cout << x << " ";
+	}
+	cout << endl;
+}
+
+void printMap(map<int,int> m){
+	for(auto const& backupServer : socketBackup){
+		cout << backupServer.first << " - " << backupServer.second << endl;
+	}
+}	
+
 void *startAliveThread(void *socket)
 {
 	int *socketAdress = (int *)socket;
 
-
+	int bytes; 
+	char buffer[ALOC_SIZE];
 	while(true){
 
 		set<string> listOfBackupsAlive;
+
+		printMap(socketBackup);
+		printSet(listOfBackupsAlive);
 		for(auto const& backupServer : socketBackup){
-				if(sendMessage("ALIVE",backupServer.second) >=  0){
-					listOfBackupsAlive.insert(backupToIp[backupServer.second]);
-				}else{
+
+			if(sendMessage("ALIVE",backupServer.second) >=  0){
+				listOfBackupsAlive.insert(backupToIp[backupServer.second]);
+			}else{
+				cout << "Erro ao enviar alive ao backup: " << backupServer.first << endl;
+				listOfBackupsAlive.erase(listOfBackupsAlive.find(backupToIp[backupServer.second]));
+				
+				socketBackup.erase(backupServer.first);
+				break;
+				
+			}
+			struct timeval timeout;
+			timeout.tv_sec = 2;
+			timeout.tv_usec = 0;
+			setsockopt(backupServer.second, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+			bytes = recv(backupServer.second, buffer, ALOC_SIZE, 0);
+			if (bytes == -1)
+			{
+				if ((errno != EAGAIN) && (errno != EWOULDBLOCK)){
+					listOfBackupsAlive.erase(listOfBackupsAlive.find(backupToIp[backupServer.second]));
+				
 					socketBackup.erase(backupServer.first);
-					cout << "Erro ao enviar alive ao backup: " << backupServer.first << endl;
+					cout << "TIMEOUT" << endl;
+					break;
 				}
+			}
+		
 		}
+		printMap(socketBackup);
+		printSet(listOfBackupsAlive);
 		//Passando para cada backup uma "lista" de ips:porta de todos backups vivos conectados ao server primario
 		for(auto const& backupServer : socketBackup){
+			bool failed = false;
 			if(sendMessage("LISTBACKUP",backupServer.second) < 0){
+				cout << "Erro ao enviar LISTBACKUP" << endl;
+				listOfBackupsAlive.erase(listOfBackupsAlive.find(backupToIp[backupServer.second]));
 				socketBackup.erase(backupServer.first);
-				continue;
-			}
 				
-			int qtOfBackupIps = listOfBackupsAlive.size();
-			sendMessage(to_string(qtOfBackupIps),backupServer.second);
-			for(auto backupIp : listOfBackupsAlive){
-				sendMessage(backupIp, backupServer.second);
+				break;
 			}
+			
+			int qtOfBackupIps = listOfBackupsAlive.size();
+			if(sendMessage(to_string(qtOfBackupIps),backupServer.second) < 0){
+				cout << "Erro ao enviar qtOfBackupIps" << endl;
+				listOfBackupsAlive.erase(listOfBackupsAlive.find(backupToIp[backupServer.second]));
+				socketBackup.erase(backupServer.first);
+				
+				break;
+			}
+			for(auto backupIp : listOfBackupsAlive){
+				cout << backupIp << endl;
+				if(sendMessage(backupIp, backupServer.second) < 0){
+					cout << "erro ao enviar backup ip" << endl;
+					listOfBackupsAlive.erase(listOfBackupsAlive.find(backupToIp[backupServer.second]));
+					socketBackup.erase(backupServer.first);
+					failed = true;
+					
+					break;
+				}
+			}
+			printSet(listOfBackupsAlive);
+			if(failed)
+				break;
 		}
-		sleep(1);
+		sleep(2);
 	}
 }
 void *startElectionThread(void *socketRec)
@@ -717,7 +784,7 @@ void *startBackupThread(void *socket)
 
 	   }else if(strcmp(buffer,"ALIVE") == 0){
 			begin = std::chrono::steady_clock::now();
-
+			sendMessage("OK",*socketAdress);
 			
 
 	   }else if(strcmp(buffer,"LISTBACKUP") == 0){
@@ -725,6 +792,7 @@ void *startBackupThread(void *socket)
 			begin = std::chrono::steady_clock::now();
 			bytes = read(*socketAdress,buffer,ALOC_SIZE);
 			int qtOfBackupIps = atoi(buffer);
+			cout << "qtBackups: " << qtOfBackupIps << endl;
 			for(int i = 0; i < qtOfBackupIps; i++){
 				bytes = read(*socketAdress,buffer,ALOC_SIZE);
 				listOfBackupsIp.insert(buffer);
@@ -819,7 +887,7 @@ int main(int argc, char *argv[])
     	if (connect(primarySockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0){
       	  cout << "erro ao conectar sync_sock" << endl;
    		 }
-
+		cout << "conectado" << endl;
 		sendMessage("4",primarySockfd); //Type of service = 4 : Backup
 		sendMessage(to_string(id),primarySockfd); //Envia id do servidor backup para o primario
 	}
