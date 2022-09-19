@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <ifaddrs.h>
 #include <signal.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -56,6 +57,7 @@ char buffer[ALOC_SIZE];
 struct hostent *primaryServer;
 
 struct sockaddr_in serv_addr, cli_addr;
+struct sockaddr_in serv_addr_backup;
 
 pthread_t clientThread, syncThread, propThread, backupThread, aliveThread, electionThread, backupWaitThread;
 
@@ -63,23 +65,39 @@ bool isPrimary = false;
 
 int sockfd, clientSockfd, n, primarySockfd;
 
+string getethname () {
+    struct ifaddrs * ifAddrStruct=NULL;
+    struct ifaddrs * ifa=NULL;
+    void * tmpAddrPtr=NULL;
+
+    getifaddrs(&ifAddrStruct);
+    char addressBuffer[INET_ADDRSTRLEN];
+    for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr) {
+            continue;
+        }
+        if (ifa->ifa_addr->sa_family == AF_INET && strcmp(ifa->ifa_name, "eth0") == 0)  { // check it is IP4
+            // is a valid IP4 Address
+            tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+            printf("%s", addressBuffer);
+        }
+    }
+    if (ifAddrStruct!=NULL) freeifaddrs(ifAddrStruct);
+    return addressBuffer;
+}
+
 void sendNewPrimary() {
-    char hostbuffer[256];
-    char IPbuffer[256];
-    struct hostent *host_entry;
-    int hostname;
+    string IPbuffer;
+
 
     // To retrieve hostname
-    hostname = gethostname(hostbuffer, sizeof(hostbuffer));
-    // To retrieve host information
-    host_entry = gethostbyname(hostbuffer);
-    // To convert an Internet network
-    // address into ASCII string
-    inet_ntop( AF_INET, &serv_addr.sin_addr, IPbuffer, INET_ADDRSTRLEN );
+
     //IPbuffer = inet_ntoa(*((struct in_addr*)
     //                       host_entry->h_addr_list[0]));
+    IPbuffer = getethname();
     cout << "fazendo novas conexões" << endl;
-	int ip_size = strlen(IPbuffer);
+	int ip_size = IPbuffer.size();
 	cout << "IPbuffer " << IPbuffer << endl;
 
 	struct hostent *device_frontend;
@@ -111,7 +129,7 @@ void sendNewPrimary() {
 
 		cout << "conectado a " << device_ip << endl;
         cout << "IP BUFFER " << IPbuffer << endl;
-		write(frontend_sock, IPbuffer, ip_size);
+		write(frontend_sock, IPbuffer.c_str(), ip_size);
 
 		close(frontend_sock);
 	}
@@ -295,6 +313,8 @@ void listenClient(int userId, int clientSocket)
 	if (bytes < 0)
 		cout << "erro ao ler requisicao do cliente" << endl;
 
+
+    cout << "REQUISICAO CLIENTE: " << buffer << endl;
 	while (strcmp(buffer, "exit") != 0)
 	{
 		if (strcmp(buffer, "upload") == 0)
@@ -330,6 +350,7 @@ void listenClient(int userId, int clientSocket)
 		}
 		bzero(buffer,ALOC_SIZE);
 		bytes = read(clientSocket, buffer, ALOC_SIZE);
+        cout << "REQUISICAO CLIENTE: " << buffer << endl;
 	}
 	closeSocket(userId);
 }
@@ -930,11 +951,7 @@ void *startBackupThread(void *socket)
 
 				cout << "Doing election..." << endl;
 				doElection();
-				// Terminou eleição, agora reorganiza caso seja primário
-				if(isPrimary) {
 
-                    sendNewPrimary();
-				}
 				doingElection = true;
 			}
 	   }
@@ -967,6 +984,9 @@ int main(int argc, char *argv[])
 
 	bzero(&(serv_addr.sin_zero), 8);
 
+
+
+
 	if (bind(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0){
 		cout << "ERROR on binding" << endl;
 		return 0;
@@ -974,6 +994,7 @@ int main(int argc, char *argv[])
 	listen(sockfd, 5);
 
 	socklen_t clilen = sizeof(struct sockaddr_in);
+
 
 	if(isPrimary)
 		cout << "Server primary inicializado..." << endl;
@@ -988,12 +1009,12 @@ int main(int argc, char *argv[])
 		if((primarySockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 			std::cout << "ERROR while connecting to primary server" << std::endl;
 
-		serv_addr.sin_family = AF_INET;
-		serv_addr.sin_port = htons(PORT);
-		serv_addr.sin_addr = *((struct in_addr *)primaryServer->h_addr);
-		bzero(&(serv_addr.sin_zero), 8);
+		serv_addr_backup.sin_family = AF_INET;
+		serv_addr_backup.sin_port = htons(PORT);
+		serv_addr_backup.sin_addr = *((struct in_addr *)primaryServer->h_addr);
+		bzero(&(serv_addr_backup.sin_zero), 8);
 
-    	if (connect(primarySockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0){
+    	if (connect(primarySockfd,(struct sockaddr *) &serv_addr_backup,sizeof(serv_addr_backup)) < 0){
       	  cout << "erro ao conectar sync_sock" << endl;
    		 }
 		cout << "conectado" << endl;
