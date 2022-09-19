@@ -57,7 +57,7 @@ struct hostent *primaryServer;
 
 struct sockaddr_in serv_addr, cli_addr;
 
-pthread_t clientThread, syncThread, propThread, backupThread, aliveThread, electionThread;
+pthread_t clientThread, syncThread, propThread, backupThread, aliveThread, electionThread, backupWaitThread;
 
 bool isPrimary = false;
 
@@ -641,6 +641,7 @@ void *startAliveThread(void *socket)
 		sleep(2);
 	}
 }
+
 void *startElectionThread(void *socketRec)
 {
 	int *socketAdress = (int *)socketRec;
@@ -660,6 +661,7 @@ void *startElectionThread(void *socketRec)
 
 		if(idRead == id){//Elected
 			cout << idRead <<" : eleito" << endl;
+			isPrimary = true;
             sendNewPrimary();
 			break;
 		}
@@ -729,6 +731,38 @@ void *startElectionThread(void *socketRec)
 	}
 }
 
+void *startBackupWaitThread(void *client_info)
+{
+                socklen_t clilen = sizeof(struct sockaddr_in); //PODE NAO ESTAR CORRETO
+                struct CliInfo* cli_info = (struct CliInfo*) client_info;
+	                //Espera backup se conectar para fazer eleição
+                if(isPrimary){
+                    cout << "Mudou para primario" << endl;
+                }
+                if ((clientSockfd = accept4(sockfd, (struct sockaddr *)&cli_info->cli_addr, &clilen,SOCK_NONBLOCK)) == -1)
+                {
+                    cout << "Erro ao aceitar" << endl;
+                }
+                bzero(buffer, ALOC_SIZE);
+
+				int typeOfService;
+
+				char buffer[ALOC_SIZE];
+				read(clientSockfd, buffer, ALOC_SIZE);
+				typeOfService = atoi(buffer);
+                if(typeOfService == 5){//ELECTION
+					cout << "Conexao de eleicao recebida" << endl;
+					int bytes;
+                    int serverId;
+                    char buffer[ALOC_SIZE];
+
+					if (pthread_create(&electionThread, NULL, startElectionThread, &clientSockfd))
+                    {
+                        cout << "Erro ao abrir a thread de eleição" << endl;
+                    }
+				}
+}
+
 void doElection(){
 
 	string ipOfNext ="-";
@@ -736,8 +770,10 @@ void doElection(){
 
 
 	if(listOfBackupsIp.size() == 1){//Only alive
-		cout << id <<" Eleito" << endl;
+		cout << id <<" Eleitoopoo" << endl;
+		pthread_cancel(backupWaitThread);
 		isPrimary = true;
+		sendNewPrimary();
 		return;
 
 	}else{ // Send message to the next of the ring
@@ -970,10 +1006,12 @@ int main(int argc, char *argv[])
 			cout << "Erro ao abrir a thread do cliente" << endl;
 		}
 	}
-
+    bool openedBackupThread = false;
 	while (true)
 	{
+	    cout << "Primary: " << isPrimary << endl;
 		if(isPrimary){ //Se é primário
+            cout << "here" << endl;
 			if ((clientSockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen)) == -1)
 			{
 				cout << "Erro ao aceitar" << endl;
@@ -1041,28 +1079,16 @@ int main(int argc, char *argv[])
                 }
 			}
 		}else{ //Se é backup
-                if ((clientSockfd = accept(sockfd, (struct sockaddr *)&cli_addr, &clilen)) == -1)
-                {
-                    cout << "Erro ao aceitar" << endl;
-                }
-                bzero(buffer, ALOC_SIZE);
-
-				int typeOfService;
-
-				char buffer[ALOC_SIZE];
-				read(clientSockfd, buffer, ALOC_SIZE);
-				typeOfService = atoi(buffer);
-                if(typeOfService == 5){//ELECTION
-					cout << "Conexao de eleicao recebida" << endl;
-					int bytes;
-                    int serverId;
-                    char buffer[ALOC_SIZE];
-
-					if (pthread_create(&electionThread, NULL, startElectionThread, &clientSockfd))
+                struct CliInfo cli_info = {clientSockfd, &cli_addr};
+                if(!openedBackupThread){
+                    if (pthread_create(&backupWaitThread, NULL, startBackupWaitThread, &cli_info))
                     {
-                        cout << "Erro ao abrir a thread de eleição" << endl;
+                            cout << "Erro ao abrir a thread do cliente" << endl;
                     }
-				}
+                    openedBackupThread = true;
+                }
+
+
 		}
 
 	}

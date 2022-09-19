@@ -93,13 +93,14 @@ int connectSocket(){
 		return -1;
 	}
 	int service = 1;
-
+    cout << "Connected on socket" << endl;
 	sendMessage(to_string(service));
 
 	sendMessage(userId);
 
 	char buffer[ALOC_SIZE];
 	int bytes = read(sockfd, buffer,ALOC_SIZE);
+
 
 	return 1;
 }
@@ -787,7 +788,7 @@ void *waitForNewServer(void* param) {
 
 		server_port++;
 
-		sleep(10);
+		sleep(3);
 
 		ClientSocket();
         cout << "conectado" << endl;
