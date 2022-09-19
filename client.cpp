@@ -36,6 +36,7 @@ pthread_mutex_t m3 = PTHREAD_MUTEX_INITIALIZER;
 #define SYNCSERVICE 2
 #define REQUESTSERVICE 1
 #define PORT 4000
+#define PORT_OFFSET 100
 #define ALOC_SIZE 512
 
 using namespace std;
@@ -44,10 +45,12 @@ string dirName;
 int sockfd;
 int gsynckSock;
 int gpropSock;
+int waitSocket;
 struct sockaddr_in serv_addr;
 struct hostent *server;
 string userId;
 char *hostname;
+int server_port = PORT;
 
 string filenameToBeIgnored = "";
 
@@ -60,7 +63,7 @@ void ClientSocket(){
 		std::cout << "ERROR while opening socket" << std::endl;
 
 	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_port = htons(PORT);
+	serv_addr.sin_port = htons(server_port);
 	serv_addr.sin_addr = *((struct in_addr *)server->h_addr);
 	bzero(&(serv_addr.sin_zero), 8);
 }
@@ -603,7 +606,7 @@ void sync_client(){
     }
 
     serv_addr_sync.sin_family = AF_INET;
-    serv_addr_sync.sin_port = htons(PORT);
+    serv_addr_sync.sin_port = htons(server_port);
     serv_addr_sync.sin_addr = *((struct in_addr *)server_sync->h_addr);
 
     bzero(&(serv_addr_sync.sin_zero), 8);
@@ -719,7 +722,7 @@ void sync_propagate(){
     }
 
     serv_addr_sync.sin_family = AF_INET;
-    serv_addr_sync.sin_port = htons(PORT);
+    serv_addr_sync.sin_port = htons(server_port);
     serv_addr_sync.sin_addr = *((struct in_addr *)server_sync->h_addr);
 
     bzero(&(serv_addr_sync.sin_zero), 8);
@@ -745,16 +748,70 @@ void sync_propagate(){
 
 }
 
+void *waitForNewServer(void* param) {
+	waitSocket = socket(AF_INET, SOCK_STREAM, 0);
+	if (waitSocket < 0)
+		cout << "ERROR creating waitSocket" << endl;
+
+	struct sockaddr_in self_addr, server_addr;
+	self_addr.sin_family = AF_INET;
+	self_addr.sin_port = htons(PORT+PORT_OFFSET);
+	self_addr.sin_addr.s_addr = INADDR_ANY;
+	bzero(&(self_addr.sin_zero), 8);
+
+	if (bind(waitSocket, (struct sockaddr*) &self_addr, sizeof(self_addr)) < 0)
+		cout << "ERROR on waitSocket binding" << endl;
+
+	// Se dois servidores tentarem se conectar ao mesmo tempo, é erro na eleição
+	listen(waitSocket, 1);
+	cout << "ready to receive new primary" << endl;
+
+	while(true) {
+		int newsockfd;
+		socklen_t servLen = sizeof(struct sockaddr_in);
+		if ((newsockfd = accept(waitSocket, (struct sockaddr *) &server_addr, &servLen)) == -1) {
+			cout << "ERROR accepting new server" << endl;
+			continue;
+		}
+		char buff[ALOC_SIZE] = {};
+		read(newsockfd, buff, ALOC_SIZE);
+		cout << "novo primario detectado: " << buff << endl;
+		hostname = (char *) malloc(sizeof(buff));
+		strcpy(hostname, buff);
+		close(newsockfd);
+
+		// A partir daqui, envia
+		close(sockfd);
+		close(gsynckSock);
+		close(gpropSock);
+
+		sleep(10);
+		cout << "conectando..." << endl;
+
+		ClientSocket();
+
+		if(connectSocket() == -1){
+			cout << "Erro ao conectar" << endl;
+			return 0;
+		}
+		sync_client();
+		sync_propagate();
+	}
+}
 
 int main(int argc, char *argv[])
 {
-
+	pthread_t wait_server_thread;
 	//Estabelece conexão
-	//argv1 : Host , argv2 = UserId
+	//argv1 : Host , argv2 = UserId, argv3 = server_port(padrão 4000)
 	userId = argv[2];
 	hostname = (char *)malloc(sizeof(argv[1]));
+	if (argc == 4)
+		server_port = atoi(argv[3]);
 
 	strcpy(hostname, argv[1]);
+
+	cout << "porta: " << server_port << endl;
 	ClientSocket();
 
 	if(connectSocket() == -1){
@@ -763,7 +820,8 @@ int main(int argc, char *argv[])
 	}
 
 	sync_client();
-    sync_propagate();
+	sync_propagate();
+	pthread_create(&wait_server_thread, NULL, waitForNewServer, NULL);
 	interface();
 	closeSocket();
 
