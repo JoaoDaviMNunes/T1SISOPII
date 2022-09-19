@@ -880,13 +880,15 @@ void *waitForNewServer(void* param)
         pthread_cancel(sync_thread_prop);
         pthread_cancel(sync_thread_thread);
 
-
         // A partir daqui, envia
         close(sockfd);
         close(gsynckSock);
         close(gpropSock);
 
-        server_port++;
+        //Nova porta de conexão
+        read(newsockfd, buff, ALOC_SIZE);
+
+        server_port = PORT + int(buff);
         inotify_rm_watch( fd, wd );
         sleep(3);
 

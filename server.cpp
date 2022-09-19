@@ -131,6 +131,9 @@ void sendNewPrimary() {
         cout << "IP BUFFER " << IPbuffer << endl;
 		write(frontend_sock, IPbuffer.c_str(), ip_size);
 
+		int primaryId = PORT + id;
+		write(frontend_sock, to_string(primaryId).c_str(), ALOC_SIZE);
+
 		close(frontend_sock);
 	}
 	cout << "fim dos avisos" << endl;
