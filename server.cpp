@@ -115,6 +115,7 @@ void sendNewPrimary() {
 
 		close(frontend_sock);
 	}
+	cout << "fim dos avisos" << endl;
 }
 
 int sendMessage(std::string message, int clientSocket){
@@ -737,7 +738,6 @@ void doElection(){
 	if(listOfBackupsIp.size() == 1){//Only alive
 		cout << id <<" Eleito" << endl;
 		isPrimary = true;
-		sendNewPrimary();
 		return;
 
 	}else{ // Send message to the next of the ring
@@ -894,8 +894,10 @@ void *startBackupThread(void *socket)
 
 				cout << "Doing election..." << endl;
 				doElection();
-				if(isPrimary){
-                    pthread_cancel(backupThread);
+				// Terminou eleição, agora reorganiza caso seja primário
+				if(isPrimary) {
+
+                    sendNewPrimary();
 				}
 				doingElection = true;
 			}
@@ -914,10 +916,6 @@ int main(int argc, char *argv[])
 	if(strcmp(argv[1],"0") == 0)
 		isPrimary = true;
 	id  = atoi(argv[1]);
-
-
-
-	socklen_t clilen;
 
 	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 		cout << "ERROR opening socket" << endl;
@@ -939,7 +937,7 @@ int main(int argc, char *argv[])
 	}
 	listen(sockfd, 5);
 
-	clilen = sizeof(struct sockaddr_in);
+	socklen_t clilen = sizeof(struct sockaddr_in);
 
 	if(isPrimary)
 		cout << "Server primary inicializado..." << endl;
@@ -1062,7 +1060,7 @@ int main(int argc, char *argv[])
 
 					if (pthread_create(&electionThread, NULL, startElectionThread, &clientSockfd))
                     {
-                        cout << "Erro ao abrir a thread do cliente" << endl;
+                        cout << "Erro ao abrir a thread de eleição" << endl;
                     }
 				}
 		}

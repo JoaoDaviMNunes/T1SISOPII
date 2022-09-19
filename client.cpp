@@ -785,10 +785,12 @@ void *waitForNewServer(void* param) {
 		close(gsynckSock);
 		close(gpropSock);
 
+		server_port++;
+
 		sleep(10);
-		cout << "conectando..." << endl;
 
 		ClientSocket();
+        cout << "conectado" << endl;
 
 		if(connectSocket() == -1){
 			cout << "Erro ao conectar" << endl;
