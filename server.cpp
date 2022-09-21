@@ -51,8 +51,19 @@ set<string> devicesAddress; // Salva endereços ips dos devices para reconexão
 
 set<string> listOfBackupsIp;
 
+struct DeviceSockets {
+  int sockfd;
+  int gsyncSock;
+  int gpropSock;
+};
+
+map<int, map <int, DeviceSockets>> userDevices;
+
+// para acessar
+// userDevices[userId][sockfd];
 
 int id;
+
 
 struct CliInfo {
 	int sockfd;
@@ -201,6 +212,74 @@ int getFileSize(string filepath){
     		return in.tellg();
 }
 
+void listServer(int userId, int clientSocket)
+{
+
+	string buffer = "";
+	int bytes;
+
+	char directory[256];
+    getcwd(directory, 256);
+
+	string dirName = string(directory);
+	dirName += "/";
+	dirName += to_string(userId);
+
+	//cout << dirName << endl;
+
+    DIR *dir;
+    struct dirent *dent;
+    dir = opendir((const char *) dirName.c_str());
+
+    string path, filename;
+
+    if(dir!=NULL)
+    {
+        while((dent=readdir(dir))!=NULL)
+        {
+
+            // O uso dessas strings aqui é uma gambiarra pra pegar o caminho de cada arquivo
+            filename = dent->d_name;
+            path = dirName + (string) "/" + filename;
+
+            struct stat info;
+            stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
+            if(dent->d_name[0] != '.')
+            {                
+				buffer += "> Arquivo: ";
+				buffer += dent->d_name ;
+				buffer += "\n";
+				bytes = write(clientSocket, buffer.c_str(),ALOC_SIZE);
+				buffer = "";
+
+				buffer += "  Modification Time: ";
+				buffer +=  (4+ctime(&info.st_mtime));
+				bytes = write(clientSocket, buffer.c_str(),ALOC_SIZE);
+				buffer = "";
+
+				buffer += "  Access Time: ";
+				buffer +=  (4+ctime(&info.st_atime));
+				bytes = write(clientSocket, buffer.c_str(),ALOC_SIZE);
+				buffer = "";
+
+				buffer += "  Creation Time: ";
+				buffer += (4+ctime(&info.st_ctime));
+				buffer += "\n";
+				bytes = write(clientSocket, buffer.c_str(),ALOC_SIZE);
+				buffer = "";
+            }		
+        }
+		buffer = "ENDOFFILESINSERVER";
+		bytes = write(clientSocket, buffer.c_str(),ALOC_SIZE);
+		buffer = "";
+        closedir(dir);
+    }
+    else
+    {
+        std::cout << "Erro na abertura do diretório\n" << std::endl;
+    }
+}
+
 void closeSocket(int userId){
 
 	for(auto x:mUserIdToSocks[userId]){
@@ -335,8 +414,10 @@ void listenClient(int userId, int clientSocket)
 	if (bytes < 0)
 		cout << "erro ao ler requisicao do cliente" << endl;
 
+	//cout << "User Id Cliente em execução : " << userId << endl;
 
-    cout << "REQUISICAO CLIENTE: " << buffer << endl;
+
+    //cout << "REQUISICAO CLIENTE: " << buffer << endl;
 	while (strcmp(buffer, "exit") != 0)
 	{
 		if (strcmp(buffer, "upload") == 0)
@@ -370,9 +451,12 @@ void listenClient(int userId, int clientSocket)
 
             deleteFileToBackup(userId,fileName);
 		}
+		if(strcmp(buffer, "list_server") == 0){
+			listServer(userId, clientSocket);
+		}
 		bzero(buffer,ALOC_SIZE);
 		bytes = read(clientSocket, buffer, ALOC_SIZE);
-        cout << "REQUISICAO CLIENTE: " << buffer << endl;
+        //cout << "REQUISICAO CLIENTE: " << buffer << endl;
 	}
 	closeSocket(userId);
 }
@@ -500,6 +584,7 @@ void *startClientThread(void *client_info)
 	char buffer[ALOC_SIZE];
 	bytes = read(socket, buffer, ALOC_SIZE);
 	userId = atoi(buffer);
+
 	if(bytes < 0)
 		cout << "erro ao ler userID" << endl;
 	char isConnected = 'Y';
@@ -551,6 +636,8 @@ void *startPropagateThread(void *socket)
 	userId = atoi(buffer);
 	if (userId < 0)
 		cout << "Erro ao ler do socket" << endl;
+
+	userDevices[userId][*socketAdress].gpropSock = *socketAdress;
 
 	mUserIdToSocks[userId].insert(*socketAdress);
 	mUserPropSock[userId] = *socketAdress;

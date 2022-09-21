@@ -45,6 +45,7 @@ string dirName;
 int sockfd;
 int gsynckSock;
 int gpropSock;
+
 int waitSocket;
 struct sockaddr_in serv_addr;
 struct hostent *server;
@@ -122,6 +123,25 @@ int sendMessageSync(std::string message, int sync_sock)
     int bytes = write(sync_sock, buffer, ALOC_SIZE);
 
     return bytes;
+}
+void listServer()
+{
+    int bytes, qtdFiles;
+    char buffer[ALOC_SIZE];
+    sendMessage("list_server"); //envia a requisição para o servidor
+    do{
+        bzero(buffer,ALOC_SIZE);
+        bytes = read(sockfd , buffer,ALOC_SIZE);
+        if(bytes < 0)                
+        {
+            cout << "Erro ao receber dados list_server";
+        }
+        else{
+            if(strcmp(buffer,"ENDOFFILESINSERVER") != 0)
+            cout << buffer;
+        }       
+    }
+    while(strcmp(buffer,"ENDOFFILESINSERVER") != 0);
 }
 
 void listClient()
@@ -492,9 +512,8 @@ void interface()
         else if(request == "list_server")
         {
             //Lista os arquivos salvos no servidor associados ao usuário.
-            //sendMessage(request);
-            // read socket
             cout << "listar arquivos do servidor\n";
+            listServer();
         }
         else if(request == "list_client")
         {
