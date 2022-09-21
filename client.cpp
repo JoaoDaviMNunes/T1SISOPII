@@ -875,6 +875,13 @@ void *waitForNewServer(void* param)
         hostname = (char *) malloc(sizeof(buff));
         strcpy(hostname, buff);
 
+        //Nova porta de conexão
+        bzero(buff, ALOC_SIZE);        
+        read(newsockfd, buff, ALOC_SIZE);
+        cout << "Id do servidor :" << buff << endl;
+        server_port = atoi(buff); 
+        cout << "Porta do novo servidor :" << server_port << endl;   
+
         close(newsockfd);
 
         pthread_cancel(sync_thread_prop);
@@ -885,10 +892,6 @@ void *waitForNewServer(void* param)
         close(gsynckSock);
         close(gpropSock);
 
-        //Nova porta de conexão
-        read(newsockfd, buff, ALOC_SIZE);
-
-        server_port = PORT + int(buff);
         inotify_rm_watch( fd, wd );
         sleep(3);
 
