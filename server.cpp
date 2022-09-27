@@ -570,7 +570,7 @@ void sendCliAddrToBackups(struct sockaddr_in* cli_addr) {
 	cout << "novo device: " << str << endl;
 	// envia o endereço para os backups (o primário não precisa salvar)
 	for (auto const& backup_pair : socketBackup) {
-		if (write(backup_pair.second, str, INET_ADDRSTRLEN) < 0)
+		if (write(backup_pair.second, str, ALOC_SIZE) < 0)
 			cout << "Erro ao enviar endereço do device para o backup" << endl;
 	}
 }
@@ -719,7 +719,7 @@ void *startAliveThread(void *socket)
 			timeout.tv_usec = 0;
 			setsockopt(backupServer.second, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
-			bytes = recv(backupServer.second, buffer, ALOC_SIZE, 0);
+			bytes = recv(backupServer.second, buffer, ALOC_SIZE, MSG_WAITALL);
 			if (bytes == -1)
 			{
 				if ((errno != EAGAIN) && (errno != EWOULDBLOCK)){
@@ -815,7 +815,7 @@ void backupConnectToNewPrimary(int electedId){
 
 void doElection(int nextBackupSockfd)
 {
-	const int SIZE_BUFF = 5;
+
 
 	bool inElection = true;
 	string vote = to_string(id);
@@ -823,10 +823,10 @@ void doElection(int nextBackupSockfd)
 	int ans;
 	int electedId;
 	while(inElection) {
-		char buff[SIZE_BUFF] = "";
-		ans = write(nextBackupSockfd, vote.c_str(), vote.size());
+		char buff[ALOC_SIZE] = "";
+		ans = write(nextBackupSockfd, vote.c_str(), ALOC_SIZE);
 		if (ans == -1) break;
-		recv(prevBackupSockfd, buff, SIZE_BUFF,MSG_WAITALL);
+		recv(prevBackupSockfd, buff, ALOC_SIZE,MSG_WAITALL);
 		int receivedVote = atoi(buff);
 		if (receivedVote < bestVote) // Recebeu um voto melhor, salva
 		{
@@ -837,7 +837,7 @@ void doElection(int nextBackupSockfd)
 		{
 			inElection = false;
 			electedId = bestVote;
-			ans = write(nextBackupSockfd, vote.c_str(), vote.size());
+			ans = write(nextBackupSockfd, vote.c_str(), ALOC_SIZE);
 		}
 	}
 	close(nextBackupSockfd);
@@ -1008,7 +1008,7 @@ void *startBackupThread(void *socket)
 			userId = atoi(buffer); //Le o userId
             initClient(userId);
 			char addr[INET_ADDRSTRLEN] = "";
-			bytes = recv(*socketAdress,addr,INET_ADDRSTRLEN,MSG_WAITALL);
+			bytes = recv(*socketAdress,addr,ALOC_SIZE,MSG_WAITALL);
 			if (bytes<0) {
 				cout << "cannot read device address" << endl;
 			}
