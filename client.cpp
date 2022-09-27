@@ -109,7 +109,7 @@ int connectSocket()
     sendMessage(userId);
 
     char buffer[ALOC_SIZE];
-    int bytes = read(sockfd, buffer,ALOC_SIZE);
+    int bytes = recv(sockfd, buffer,ALOC_SIZE, MSG_WAITALL);
 
 
     return 1;
@@ -131,7 +131,7 @@ void listServer()
     sendMessage("list_server"); //envia a requisição para o servidor
     do{
         bzero(buffer,ALOC_SIZE);
-        bytes = read(sockfd , buffer,ALOC_SIZE);
+        bytes = recv(sockfd , buffer,ALOC_SIZE, MSG_WAITALL);
         if(bytes < 0)                
         {
             cout << "Erro ao receber dados list_server";
@@ -202,7 +202,7 @@ void waitConfirm()
 {
     int bytes;
     char buff[ALOC_SIZE];
-    bytes = read(sockfd,buff,ALOC_SIZE);
+    bytes = recv(sockfd,buff,ALOC_SIZE, MSG_WAITALL);
     cout << buff << endl;
 }
 
@@ -280,7 +280,7 @@ void downloadFileSync(string fileName)  //TODO
     cout << "baixando arquivo" << endl;
 
     int fileSize;
-    bytes = read(sockfd,buffer,ALOC_SIZE);
+    bytes = recv(sockfd,buffer,ALOC_SIZE,MSG_WAITALL);
     if(strcmp(buffer,"erro") == 0)
     {
         cout << "erro ao baixar arquivo do servidor";
@@ -319,7 +319,7 @@ void downloadFile(string fileName)  //TODO
 
 
     int fileSize;
-    bytes = read(sockfd,buffer,ALOC_SIZE);
+    bytes = recv(sockfd,buffer,ALOC_SIZE,MSG_WAITALL);
     if(strcmp(buffer,"erro") == 0)
     {
         cout << "erro ao baixar arquivo do servidor";
@@ -371,7 +371,7 @@ void download_all_files(int sync_sock)
     {
 
         //Le nome do arquivo
-        bytes = read(sync_sock,buffer,ALOC_SIZE);
+        bytes = recv(sync_sock,buffer,ALOC_SIZE,MSG_WAITALL);
         fileName = buffer;
         if(bytes < 0)
         {
@@ -383,7 +383,7 @@ void download_all_files(int sync_sock)
         file = fopen(dirFile.c_str(),"wb");
         int fileSize;
 
-        bytes = read(sync_sock, buffer, ALOC_SIZE);
+        bytes = recv(sync_sock, buffer, ALOC_SIZE, MSG_WAITALL);
         fileSize = atoi(buffer);
         bzero(buffer, ALOC_SIZE);
 
@@ -573,7 +573,7 @@ void listenServer(int sync_sock)
     char buffer[ALOC_SIZE];
     int bytes;
 
-    bytes = read(sync_sock,buffer,ALOC_SIZE);
+    bytes = recv(sync_sock,buffer,ALOC_SIZE, MSG_WAITALL);
     if(strcmp("exit",buffer) == 0)
     {
         closeSyncSocket(sync_sock);
@@ -723,7 +723,7 @@ void sync_client()
 
     bytes = sendMessageSync(userId,sync_sock);
     char buffer[ALOC_SIZE];
-    bytes = read(sync_sock, buffer,ALOC_SIZE); //Socket confirm
+    bytes = recv(sync_sock, buffer,ALOC_SIZE,MSG_WAITALL); //Socket confirm
     gsynckSock = sync_sock;
 
     deleteAllFiles();
@@ -747,7 +747,7 @@ void *sync_thread_propagate(void *socket)
     bzero(buffer,ALOC_SIZE);
 
 
-    bytes = read(gpropSock, buffer, ALOC_SIZE);
+    bytes = recv(gpropSock, buffer, ALOC_SIZE,MSG_WAITALL);
 
     while (strcmp(buffer, "exit") != 0)
     {
@@ -772,13 +772,13 @@ void *sync_thread_propagate(void *socket)
         {
             cout << "PROPAGATE RECEBIDO" << endl;
             bzero(buffer, ALOC_SIZE);
-            bytes = read(gpropSock, buffer, ALOC_SIZE);
+            bytes = recv(gpropSock, buffer, ALOC_SIZE,MSG_WAITALL);
             cout << bytes << " - " << buffer << endl;
             if(strcmp(buffer, "upload")== 0)
             {
                 cout << "UPLOAD PROPAGATE" << endl;
                 bzero(buffer, ALOC_SIZE);
-                bytes = read(gpropSock, buffer, ALOC_SIZE);
+                bytes = recv(gpropSock, buffer, ALOC_SIZE,MSG_WAITALL);
 
                 pthread_mutex_lock(&m3);
                 inotify_rm_watch(fd,wd);
@@ -793,7 +793,7 @@ void *sync_thread_propagate(void *socket)
             {
                 cout << "DELETE PROPAGATE" << endl;
                 bzero(buffer, ALOC_SIZE);
-                bytes = read(gpropSock, buffer, ALOC_SIZE);
+                bytes = recv(gpropSock, buffer, ALOC_SIZE,MSG_WAITALL);
                 cout << "FILENAME: " << buffer <<endl;
                 deleteFile(buffer);
             }
@@ -889,14 +889,14 @@ void *waitForNewServer(void* param)
             continue;
         }
         char buff[ALOC_SIZE] = {};
-        read(newsockfd, buff, ALOC_SIZE);
+        recv(newsockfd, buff, ALOC_SIZE,MSG_WAITALL);
         cout << "novo primario detectado: " << buff << endl;
         hostname = (char *) malloc(sizeof(buff));
         strcpy(hostname, buff);
 
         //Nova porta de conexão
         bzero(buff, ALOC_SIZE);        
-        read(newsockfd, buff, ALOC_SIZE);
+        recv(newsockfd, buff, ALOC_SIZE,MSG_WAITALL);
         cout << "Id do servidor :" << buff << endl;
         server_port = atoi(buff); 
         cout << "Porta do novo servidor :" << server_port << endl;   

@@ -245,7 +245,7 @@ void listServer(int userId, int clientSocket)
             struct stat info;
             stat(path.c_str(), &info); // O primeiro argumento aqui é o caminho do arquivo
             if(dent->d_name[0] != '.')
-            {                
+            {
 				buffer += "> Arquivo: ";
 				buffer += dent->d_name ;
 				buffer += "\n";
@@ -267,7 +267,7 @@ void listServer(int userId, int clientSocket)
 				buffer += "\n";
 				bytes = write(clientSocket, buffer.c_str(),ALOC_SIZE);
 				buffer = "";
-            }		
+            }
         }
 		buffer = "ENDOFFILESINSERVER";
 		bytes = write(clientSocket, buffer.c_str(),ALOC_SIZE);
@@ -409,7 +409,7 @@ void listenClient(int userId, int clientSocket)
 	char buffer[ALOC_SIZE];
 	char confirm[10] = "ok";
 	bzero(buffer,ALOC_SIZE);
-	bytes = read(clientSocket, buffer, ALOC_SIZE);
+	bytes = recv(clientSocket, buffer, ALOC_SIZE,MSG_WAITALL);
 
 	if (bytes < 0)
 		cout << "erro ao ler requisicao do cliente" << endl;
@@ -426,9 +426,9 @@ void listenClient(int userId, int clientSocket)
 			char fileSize[ALOC_SIZE];
 			int ifileSize;
 
-			bytes = read(clientSocket, buffer, ALOC_SIZE);
+			bytes = recv(clientSocket, buffer, ALOC_SIZE,MSG_WAITALL);
 			strcpy(fileName, buffer);
-			bytes = read(clientSocket, buffer, ALOC_SIZE);
+			bytes = recv(clientSocket, buffer, ALOC_SIZE,MSG_WAITALL);
 			strcpy(fileSize, buffer);
 			ifileSize = atoi(fileSize);
 			receiveFile(userId, fileName, ifileSize, clientSocket);
@@ -436,14 +436,14 @@ void listenClient(int userId, int clientSocket)
 		if (strcmp(buffer, "download") == 0)
 		{
 			char fileName[ALOC_SIZE];
-			bytes = read(clientSocket, buffer, ALOC_SIZE);
+			bytes = recv(clientSocket, buffer, ALOC_SIZE, MSG_WAITALL);
 			strcpy(fileName, buffer);
 			sendFile(userId, fileName, clientSocket);
 		}
 		if(strcmp(buffer, "delete") == 0){
 			char fileName[ALOC_SIZE];
 			int ifileSize;
-			bytes = read(clientSocket, buffer, ALOC_SIZE);
+			bytes = recv(clientSocket, buffer, ALOC_SIZE,MSG_WAITALL);
 			strcpy(fileName, buffer);
 			deleteFile(userId, clientSocket, fileName);
 			fileNameToPropagate = fileName;
@@ -455,7 +455,7 @@ void listenClient(int userId, int clientSocket)
 			listServer(userId, clientSocket);
 		}
 		bzero(buffer,ALOC_SIZE);
-		bytes = read(clientSocket, buffer, ALOC_SIZE);
+		bytes = recv(clientSocket, buffer, ALOC_SIZE, MSG_WAITALL);
         //cout << "REQUISICAO CLIENTE: " << buffer << endl;
 	}
 	closeSocket(userId);
@@ -536,7 +536,7 @@ void listenSync(int userId, int clientSocket)
 	int bytes;
 	char buffer[ALOC_SIZE];
     bzero(buffer,ALOC_SIZE);
-	bytes = read(clientSocket, buffer, ALOC_SIZE);
+	bytes = recv(clientSocket, buffer, ALOC_SIZE,MSG_WAITALL);
 	if (bytes < 0)
 		cout << "erro ao ler requisicao do cliente" << endl;
 
@@ -547,9 +547,9 @@ void listenSync(int userId, int clientSocket)
 			char fileName[ALOC_SIZE];
 			char fileSize[ALOC_SIZE];
 			int ifileSize;
-			bytes = read(clientSocket, buffer, ALOC_SIZE);
+			bytes = recv(clientSocket, buffer, ALOC_SIZE,MSG_WAITALL);
 			strcpy(fileName, buffer);
-			bytes = read(clientSocket, buffer, ALOC_SIZE);
+			bytes = recv(clientSocket, buffer, ALOC_SIZE,MSG_WAITALL);
 			strcpy(fileSize, buffer);
 			ifileSize = atoi(fileSize);
 			receiveFile(userId, fileName, ifileSize, clientSocket);
@@ -559,7 +559,7 @@ void listenSync(int userId, int clientSocket)
             sendAllFiles(userId, clientSocket);
         }
         bzero(buffer,ALOC_SIZE);
-		bytes = read(clientSocket, buffer, ALOC_SIZE);
+		bytes = recv(clientSocket, buffer, ALOC_SIZE,MSG_WAITALL);
 	}
 }
 
@@ -582,7 +582,7 @@ void *startClientThread(void *client_info)
 	int bytes;
 	int userId;
 	char buffer[ALOC_SIZE];
-	bytes = read(socket, buffer, ALOC_SIZE);
+	bytes = recv(socket, buffer, ALOC_SIZE,MSG_WAITALL);
 	userId = atoi(buffer);
 
 	if(bytes < 0)
@@ -604,7 +604,7 @@ void *startSyncThread(void *socket)
 	int bytes;
 	int userId;
 	char buffer[ALOC_SIZE];
-	bytes = read(*socketAdress, buffer, ALOC_SIZE);
+	bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL);
 	userId = atoi(buffer);
 
 	if (userId < 0)
@@ -632,7 +632,7 @@ void *startPropagateThread(void *socket)
 	int userId;
 	char buffer[ALOC_SIZE];
 
-	bytes = read(*socketAdress, buffer, ALOC_SIZE);
+	bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL);
 	userId = atoi(buffer);
 	if (userId < 0)
 		cout << "Erro ao ler do socket" << endl;
@@ -784,7 +784,7 @@ void backupConnectToNewPrimary(int electedId){
 	if(!isPrimary){
 			cout << "Tentando se conectar ao novo primario" << endl;
 			//Se conecta ao servidor primário
-			
+
 			//primaryServer = gethostbyname(backupToIp[socketBackup[electedId]].c_str());
 			string electedIp = findElectedIp(electedId);
 			cout << "Novo ip Primario para conectar: " << electedIp << endl;
@@ -826,7 +826,7 @@ void doElection(int nextBackupSockfd)
 		char buff[SIZE_BUFF] = "";
 		ans = write(nextBackupSockfd, vote.c_str(), vote.size());
 		if (ans == -1) break;
-		read(prevBackupSockfd, buff, SIZE_BUFF);
+		recv(prevBackupSockfd, buff, SIZE_BUFF,MSG_WAITALL);
 		int receivedVote = atoi(buff);
 		if (receivedVote < bestVote) // Recebeu um voto melhor, salva
 		{
@@ -857,7 +857,7 @@ void doElection(int nextBackupSockfd)
 		cout << "Fui Eleito" << endl;
 	}
 	 else // Configura backups
-	{	
+	{
 		//fechar threads de backup anteriores e abrir nova, acontece naturalmente na main
 		//se conecta com o novo primario
 
@@ -866,7 +866,7 @@ void doElection(int nextBackupSockfd)
 		backupConnectToNewPrimary(electedId);
 		openedBackupThread = false;
 		listOfBackupsIp.clear();
-		
+
 		cout << "Fim da eleição: " << electedId << " foi eleito"<< endl;
 	}
 
@@ -957,7 +957,7 @@ void *startBackupThread(void *socket)
 
 
 
-	bytes = read(*socketAdress, buffer, ALOC_SIZE);
+	bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL);
 	serverId = atoi(buffer);
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
@@ -965,20 +965,20 @@ void *startBackupThread(void *socket)
 	while(!isPrimary){
 
        if(strcmp(buffer,"DELETE") == 0){ //Primário mandando backup deletar arquivo
-			bytes = read(*socketAdress, buffer, ALOC_SIZE);
+			bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL);
 			userId = atoi(buffer); //Le o userId
 			char fileName[ALOC_SIZE];
-			bytes = read(*socketAdress, buffer, ALOC_SIZE); //Le o nome do arquivo
+			bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL); //Le o nome do arquivo
 			strcpy(fileName, buffer);
 			deleteFile(userId,*socketAdress,fileName);
 			begin = std::chrono::steady_clock::now();
 	   }else if(strcmp(buffer,"RECEIVE") == 0){//Primário enviando arquivo ao backup
-			bytes = read(*socketAdress, buffer, ALOC_SIZE);
+			bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL);
 			userId = atoi(buffer); //Le o userId
 			char fileName[ALOC_SIZE];
-			bytes = read(*socketAdress, buffer, ALOC_SIZE); //Le o nome do arquivo
+			bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL); //Le o nome do arquivo
 			strcpy(fileName, buffer);
-			bytes = read(*socketAdress,buffer,ALOC_SIZE);
+			bytes = recv(*socketAdress,buffer,ALOC_SIZE,MSG_WAITALL);
 			int fileSize = atoi(buffer);
 			receiveFile(userId,fileName,fileSize,*socketAdress);
 			begin = std::chrono::steady_clock::now();
@@ -992,11 +992,11 @@ void *startBackupThread(void *socket)
 
 	   }else if(strcmp(buffer,"LISTBACKUP") == 0){
 			begin = std::chrono::steady_clock::now();
-			bytes = read(*socketAdress,buffer,ALOC_SIZE);
+			bytes = recv(*socketAdress,buffer,ALOC_SIZE,MSG_WAITALL);
 			int qtOfBackupIps = atoi(buffer);
 			cout << "qtBackups: " << qtOfBackupIps << endl;
 			for(int i = 0; i < qtOfBackupIps; i++){
-				bytes = read(*socketAdress,buffer,ALOC_SIZE);
+				bytes = recv(*socketAdress,buffer,ALOC_SIZE,MSG_WAITALL);
 				listOfBackupsIp.insert(buffer);
 				cout << "Ip: " << buffer << endl;
 			}
@@ -1004,11 +1004,11 @@ void *startBackupThread(void *socket)
 
 	   else if(strcmp(buffer,"INIT") == 0){
             begin = std::chrono::steady_clock::now();
-            bytes = read(*socketAdress, buffer, ALOC_SIZE);
+            bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL);
 			userId = atoi(buffer); //Le o userId
             initClient(userId);
 			char addr[INET_ADDRSTRLEN] = "";
-			bytes = read(*socketAdress,addr,INET_ADDRSTRLEN);
+			bytes = recv(*socketAdress,addr,INET_ADDRSTRLEN,MSG_WAITALL);
 			if (bytes<0) {
 				cout << "cannot read device address" << endl;
 			}
@@ -1017,7 +1017,7 @@ void *startBackupThread(void *socket)
 	   }
 	   end = std::chrono::steady_clock::now();
 
-	   
+
 	   if(std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() > 2000){
 			//do election
 
@@ -1035,7 +1035,7 @@ void *startBackupThread(void *socket)
 	   }
 	   //cout << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << endl;
 		bzero(buffer, ALOC_SIZE);
-		bytes = read(*socketAdress, buffer, ALOC_SIZE);
+		bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL);
         //cout << "COMANDO: " << buffer << endl;
 	}
 }
@@ -1059,7 +1059,7 @@ void *startBackupWaitThread(void *client_info)
 }
 
 int main(int argc, char *argv[])
-{	
+{
 	initElectionSemaphore = new sem_t();
 	endElectionSemaphore = new sem_t();
 
@@ -1120,7 +1120,7 @@ int main(int argc, char *argv[])
 
 
 	}
-    
+
 	while (true)
 	{
 	    //cout << "Primary: " << isPrimary << endl;
@@ -1138,7 +1138,7 @@ int main(int argc, char *argv[])
 				int typeOfService;
 
 				char buffer[ALOC_SIZE];
-				read(clientSockfd, buffer, ALOC_SIZE);
+				recv(clientSockfd, buffer, ALOC_SIZE,MSG_WAITALL);
 				typeOfService = atoi(buffer);
 
 				if (typeOfService < 0)
@@ -1172,7 +1172,7 @@ int main(int argc, char *argv[])
                     int serverId;
                     char buffer[ALOC_SIZE];
 
-                    bytes = read(clientSockfd, buffer, ALOC_SIZE);
+                    bytes = recv(clientSockfd, buffer, ALOC_SIZE, MSG_WAITALL);
                     serverId = atoi(buffer);
                     socketBackup[serverId] = clientSockfd;
                     char str[INET_ADDRSTRLEN];
@@ -1191,7 +1191,7 @@ int main(int argc, char *argv[])
                     }
                 }
 			}
-		}else{ //Se é backup                
+		}else{ //Se é backup
                 if(!openedBackupThread){
 					doingElection = false;
 					struct CliInfo cli_info = {clientSockfd, &cli_addr};
