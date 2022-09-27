@@ -116,6 +116,9 @@ string getethname () {
 }
 
 void sendNewPrimary() { // para o cliente
+
+    pthread_mutex_lock(&m);
+
     string IPbuffer;
 
 
@@ -152,8 +155,10 @@ void sendNewPrimary() { // para o cliente
 
 		cout << "conectando-se com " << device_ip << endl;
 
-		if (connect(frontend_sock,(struct sockaddr *) &frontend_addr,sizeof(frontend_addr)) < 0)
+		if (connect(frontend_sock,(struct sockaddr *) &frontend_addr,sizeof(frontend_addr)) < 0){
         	printf("ERROR connecting\n");
+            continue;
+		}
 
 		cout << "conectado a " << device_ip << endl;
         cout << "IP BUFFER " << IPbuffer << endl;
@@ -167,6 +172,9 @@ void sendNewPrimary() { // para o cliente
 		close(frontend_sock);
 	}
 	cout << "fim dos avisos" << endl;
+
+	pthread_mutex_unlock(&m);
+
 }
 
 int sendMessage(std::string message, int clientSocket){
@@ -187,6 +195,9 @@ void sendInitClientToBackup(int userId){
     for(auto const& backupServer : socketBackup){
         sendMessage("INIT",backupServer.second);
         sendMessage(to_string(userId),backupServer.second);
+
+        //enviar addr
+
     }
 }
 
@@ -582,6 +593,7 @@ void *startClientThread(void *client_info)
 	int bytes;
 	int userId;
 	char buffer[ALOC_SIZE];
+	bzero(buffer, ALOC_SIZE);
 	bytes = recv(socket, buffer, ALOC_SIZE,MSG_WAITALL);
 	userId = atoi(buffer);
 
@@ -592,9 +604,12 @@ void *startClientThread(void *client_info)
 	mSockToUserId[socket] = userId;
 	mUserIdToSocks[userId].insert(socket);
 
+	pthread_mutex_lock(&m);
 	sendMessage("Y",socket);
 	initClient(userId);
 	sendCliAddrToBackups(cli_info->cli_addr);
+	pthread_mutex_unlock(&m);
+
 	listenClient(userId, socket);
 }
 
@@ -604,6 +619,7 @@ void *startSyncThread(void *socket)
 	int bytes;
 	int userId;
 	char buffer[ALOC_SIZE];
+	bzero(buffer, ALOC_SIZE);
 	bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL);
 	userId = atoi(buffer);
 
@@ -631,7 +647,7 @@ void *startPropagateThread(void *socket)
 	int bytes;
 	int userId;
 	char buffer[ALOC_SIZE];
-
+    bzero(buffer, ALOC_SIZE);
 	bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL);
 	userId = atoi(buffer);
 	if (userId < 0)
@@ -658,12 +674,12 @@ void *startPropagateThread(void *socket)
                     cout << "ERRO AO ENVIAR PROPAGATE" << endl;
                 }
                 if(hasNewFile){
-                    cout << "Enviou propagate upload" << endl;
+                    cout << "Enviou propagate upload pelo socket: " << x << " para user: "<< userId << endl;
                     bytes = sendMessage("upload",x);
                     bytes = sendMessage(fileNameToPropagate,x);
                 }
                 if(hasDeleteFile){
-                    cout << "Enviou propagate delete" << endl;
+                    cout << "Enviou propagate delete pelo socket: " << x << " para user: "<< userId << endl;
                     bytes = sendMessage("delete",x);
                     cout << "Deletar: " << fileNameToPropagate << endl;
                     bytes = sendMessage(fileNameToPropagate,x);
@@ -696,6 +712,7 @@ void *startAliveThread(void *socket)
 
 	int bytes;
 	char buffer[ALOC_SIZE];
+	bzero(buffer, ALOC_SIZE);
 	while(true){
 
 		set<string> listOfBackupsAlive;
@@ -704,6 +721,7 @@ void *startAliveThread(void *socket)
 		printSet(listOfBackupsAlive);
 		for(auto const& backupServer : socketBackup){
 
+            pthread_mutex_lock(&m);
 			if(sendMessage("ALIVE",backupServer.second) >=  0){
 				listOfBackupsAlive.insert(backupToIp[backupServer.second]);
 			}else{
@@ -714,11 +732,12 @@ void *startAliveThread(void *socket)
 				break;
 
 			}
+			pthread_mutex_unlock(&m);
 			struct timeval timeout;
 			timeout.tv_sec = 2;
 			timeout.tv_usec = 0;
 			setsockopt(backupServer.second, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-
+            bzero(buffer, ALOC_SIZE);
 			bytes = recv(backupServer.second, buffer, ALOC_SIZE, MSG_WAITALL);
 			if (bytes == -1)
 			{
@@ -735,6 +754,7 @@ void *startAliveThread(void *socket)
 		printMap(socketBackup);
 		printSet(listOfBackupsAlive);
 		//Passando para cada backup uma "lista" de ips:porta de todos backups vivos conectados ao server primario
+		pthread_mutex_lock(&m);
 		for(auto const& backupServer : socketBackup){
 			bool failed = false;
 			if(sendMessage("LISTBACKUP",backupServer.second) < 0){
@@ -768,6 +788,7 @@ void *startAliveThread(void *socket)
 			if(failed)
 				break;
 		}
+		pthread_mutex_unlock(&m);
 		sleep(2);
 	}
 }
@@ -851,6 +872,7 @@ void doElection(int nextBackupSockfd)
 		pthread_cancel(backupWaitThread);
 		isPrimary = true;
 		doingElection = false;
+		sleep(3);
 		sendNewPrimary();
 		listOfBackupsIp.clear();
 
@@ -876,6 +898,8 @@ void doConnectionForElection(){
 
 	string ipOfNext ="-";
 	int minPort = 1e9;
+
+	cout << "SIZE DO LIST OF BACKUPS: " << listOfBackupsIp.size() << endl;
 
 	if(listOfBackupsIp.size() == 1){//Only alive
 		cout << id <<" Eleitoopoo" << endl;
@@ -954,6 +978,7 @@ void *startBackupThread(void *socket)
 	int userId;
 	int serverId;
 	char buffer[ALOC_SIZE];
+	bzero(buffer, ALOC_SIZE);
 
 
 
@@ -1007,13 +1032,13 @@ void *startBackupThread(void *socket)
             bytes = recv(*socketAdress, buffer, ALOC_SIZE,MSG_WAITALL);
 			userId = atoi(buffer); //Le o userId
             initClient(userId);
-			char addr[INET_ADDRSTRLEN] = "";
-			bytes = recv(*socketAdress,addr,ALOC_SIZE,MSG_WAITALL);
+            bzero(buffer,ALOC_SIZE);
+			bytes = recv(*socketAdress,buffer,ALOC_SIZE,MSG_WAITALL);
 			if (bytes<0) {
 				cout << "cannot read device address" << endl;
 			}
-			devicesAddress.insert(string(addr));
-			cout << "novo device: " << addr << endl;
+			devicesAddress.insert(string(buffer));
+			cout << "novo device: " << buffer << endl;
 	   }
 	   end = std::chrono::steady_clock::now();
 
